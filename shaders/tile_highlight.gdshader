@@ -25,7 +25,7 @@ uniform bool show_edge = false;
 uniform vec4 edge_color : source_color = vec4(1.0, 1.0, 1.0, 0.8);
 uniform float edge_width : hint_range(0.01, 0.2) = 0.05;
 
-// Hover border (only on top face)
+// Hover border (shown on all faces)
 uniform bool show_hover_border = false;
 uniform vec4 hover_border_color : source_color = vec4(1.0, 1.0, 1.0, 0.8);
 uniform float hover_border_width : hint_range(0.01, 0.15) = 0.08;
@@ -90,7 +90,7 @@ void fragment() {
 			effect_mask = max(effect_mask, selection_amount);
 		}
 		
-		// Edge highlight (allow for explored/visible tiles)
+		// Edge highlight - shown on all faces
 		if (show_edge && visibility_state != 0) {
 			float edge_x = smoothstep(0.0, edge_width, tile_uv.x) * smoothstep(0.0, edge_width, 1.0 - tile_uv.x);
 			float edge_y = smoothstep(0.0, edge_width, tile_uv.y) * smoothstep(0.0, edge_width, 1.0 - tile_uv.y);
@@ -103,20 +103,15 @@ void fragment() {
 			}
 		}
 		
-		// Hover border - only on top face (Y normal pointing up)
-		// This is a subtle outline, NOT a full highlight
+		// Hover border - shown on all faces
 		if (show_hover_border && !is_highlighted && visibility_state != 0) {
-			// NORMAL is view-space; convert to world-space to avoid camera-dependent behavior
-			vec3 world_normal = normalize((MODEL_NORMAL_MATRIX * NORMAL));
-			if (world_normal.y > 0.0) {
-				// Edge distance in UV space (0 at edge, 0.5 center)
-				float edge_dist = min(min(tile_uv.x, 1.0 - tile_uv.x), min(tile_uv.y, 1.0 - tile_uv.y));
-				float border = 1.0 - smoothstep(0.0, hover_border_width, edge_dist);
+			// Edge distance in UV space (0 at edge, 0.5 at center)
+			float edge_dist = min(min(tile_uv.x, 1.0 - tile_uv.x), min(tile_uv.y, 1.0 - tile_uv.y));
+			float border = 1.0 - smoothstep(0.0, hover_border_width, edge_dist);
 
-				base_color = mix(base_color, hover_border_color.rgb, border * hover_border_color.a);
-				final_emission += hover_border_color.rgb * 0.3 * border;
-				effect_mask = max(effect_mask, hover_border_color.a * border);
-			}
+			base_color = mix(base_color, hover_border_color.rgb, border * hover_border_color.a);
+			final_emission += hover_border_color.rgb * 0.3 * border;
+			effect_mask = max(effect_mask, hover_border_color.a * border);
 		}
 		
 		ALBEDO = base_color;

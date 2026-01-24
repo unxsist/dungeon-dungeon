@@ -35,9 +35,6 @@ const WALL_FACE_VARIATION_AMOUNT := 0.05  ## Subtle side face deformation
 @export var border_fade_distance: float = 12.0
 @export var border_y: float = -0.02
 
-## Collision layer for selectable walls
-const WALL_RAYCAST_LAYER := 1
-
 var border_shader: Shader
 
 ## Noise generator for procedural variations
@@ -182,27 +179,8 @@ func _create_tile_mesh(pos: Vector2i) -> void:
 	tile_container.add_child(mesh_instance)
 	tile_meshes[pos] = mesh_instance
 	
-	# Store tile position in metadata for raycasting
+	# Store tile position in metadata
 	mesh_instance.set_meta("tile_pos", pos)
-
-	# Create collision for raycasting (hover/selection) on diggable walls only
-	if tile_type == TileTypes.Type.WALL:
-		var body := StaticBody3D.new()
-		body.collision_layer = WALL_RAYCAST_LAYER
-		body.collision_mask = 0
-		
-		# Use a box collider for stable selection on any wall face
-		var box := BoxShape3D.new()
-		var max_height := WALL_HEIGHT + HEIGHT_VARIATION_AMOUNT * map_data.tile_size
-		box.size = Vector3(map_data.tile_size, max_height, map_data.tile_size)
-		
-		var shape_node := CollisionShape3D.new()
-		shape_node.shape = box
-		shape_node.position = Vector3(map_data.tile_size * 0.5, max_height * 0.5, map_data.tile_size * 0.5)
-		
-		body.add_child(shape_node)
-		body.set_meta("tile_pos", pos)
-		mesh_instance.add_child(body)
 
 
 ## Update border mesh around map bounds
@@ -359,7 +337,7 @@ func _add_wall_face(st: SurfaceTool, pos: Vector2i, size: float, height: float,
 			edge_top.append(top_v)
 			edge_bottom.append(Vector3(top_v.x, 0, top_v.z))
 	
-	# Create quads along the wall face
+	# Create quads along the wall face with continuous UVs
 	for i in range(subdivs):
 		var t0 := edge_top[i]
 		var t1 := edge_top[i + 1]
@@ -371,7 +349,15 @@ func _add_wall_face(st: SurfaceTool, pos: Vector2i, size: float, height: float,
 		b0 = _offset_wall_face_vertex(pos, b0, size, normal)
 		b1 = _offset_wall_face_vertex(pos, b1, size, normal)
 		
-		_add_quad(st, t0, t1, b1, b0, normal)
+		# Calculate continuous UVs across the entire face (not per-subdivision)
+		var u0 := float(i) / float(subdivs)
+		var u1 := float(i + 1) / float(subdivs)
+		var uv_t0 := Vector2(u0, 0.0)
+		var uv_t1 := Vector2(u1, 0.0)
+		var uv_b1 := Vector2(u1, 1.0)
+		var uv_b0 := Vector2(u0, 1.0)
+		
+		_add_quad(st, t0, t1, b1, b0, normal, uv_t0, uv_t1, uv_b1, uv_b0)
 
 
 ## Offset a wall face vertex along the face normal with smooth noise
@@ -438,28 +424,30 @@ func _create_floor_mesh(pos: Vector2i, _tile: Dictionary) -> Mesh:
 	return st.commit()
 
 
-## Add a quad to the surface tool with explicit normal
-func _add_quad(st: SurfaceTool, v0: Vector3, v1: Vector3, v2: Vector3, v3: Vector3, normal: Vector3) -> void:
+## Add a quad to the surface tool with explicit normal and UVs
+func _add_quad(st: SurfaceTool, v0: Vector3, v1: Vector3, v2: Vector3, v3: Vector3, normal: Vector3,
+		uv0: Vector2 = Vector2(0, 0), uv1: Vector2 = Vector2(1, 0), 
+		uv2: Vector2 = Vector2(1, 1), uv3: Vector2 = Vector2(0, 1)) -> void:
 	st.set_normal(normal)
 	
 	# UV coordinates
-	st.set_uv(Vector2(0, 0))
+	st.set_uv(uv0)
 	st.add_vertex(v0)
 	
-	st.set_uv(Vector2(1, 0))
+	st.set_uv(uv1)
 	st.add_vertex(v1)
 	
-	st.set_uv(Vector2(1, 1))
+	st.set_uv(uv2)
 	st.add_vertex(v2)
 	
 	# Second triangle
-	st.set_uv(Vector2(0, 0))
+	st.set_uv(uv0)
 	st.add_vertex(v0)
 	
-	st.set_uv(Vector2(1, 1))
+	st.set_uv(uv2)
 	st.add_vertex(v2)
 	
-	st.set_uv(Vector2(0, 1))
+	st.set_uv(uv3)
 	st.add_vertex(v3)
 
 
