@@ -37,6 +37,10 @@ const WALL_FACE_VARIATION_AMOUNT := 0.05  ## Subtle side face deformation
 
 var border_shader: Shader
 
+## Claimed floor shader and texture
+var claimed_floor_shader: Shader
+var claimed_floor_texture: Texture2D
+
 ## Noise generator for procedural variations
 var noise: FastNoiseLite
 
@@ -83,6 +87,10 @@ func _setup_materials() -> void:
 	floor_mat.roughness = 0.7
 	materials["floor"] = floor_mat
 	
+	# Claimed floor shader and texture
+	claimed_floor_shader = load("res://shaders/claimed_floor.gdshader")
+	claimed_floor_texture = load("res://resources/textures/claimed_player.png")
+	
 	# Claimed materials by faction (will be generated dynamically)
 	materials["claimed"] = {}
 
@@ -92,23 +100,42 @@ func _setup_border_shader() -> void:
 	border_shader = load("res://shaders/map_border.gdshader")
 
 
+## Player faction ID constant
+const PLAYER_FACTION_ID := 0
+
+
 ## Get or create material for claimed tile
-func _get_claimed_material(faction_id: int) -> StandardMaterial3D:
+func _get_claimed_material(faction_id: int) -> ShaderMaterial:
 	if materials["claimed"].has(faction_id):
 		return materials["claimed"][faction_id]
 	
-	var mat := StandardMaterial3D.new()
+	var mat := ShaderMaterial.new()
+	mat.shader = claimed_floor_shader
+	
+	# Set the claimed floor texture
+	mat.set_shader_parameter("albedo_texture", claimed_floor_texture)
 	
 	# Get faction color if available
 	var faction_color := Color(0.3, 0.3, 0.5)  # Default blue-gray
+	var is_player := faction_id == PLAYER_FACTION_ID
+	
 	if map_data:
 		var faction := map_data.get_faction(faction_id)
 		if faction:
 			faction_color = faction.color
 	
-	# Mix faction color with stone gray
-	mat.albedo_color = faction_color.lerp(Color(0.5, 0.5, 0.5), 0.4)
-	mat.roughness = 0.6
+	# For enemy factions, use bright red
+	if not is_player:
+		faction_color = Color(1.0, 0.2, 0.15)  # Bright red for enemies
+	
+	# Set shader parameters
+	mat.set_shader_parameter("faction_color", faction_color)
+	mat.set_shader_parameter("faction_mix", 0.15 if is_player else 0.2)
+	mat.set_shader_parameter("color_replace_strength", 0.0 if is_player else 0.95)  # Replace cyan crystal with red for enemies
+	mat.set_shader_parameter("roughness", 0.65)
+	mat.set_shader_parameter("normal_strength", 1.5)
+	mat.set_shader_parameter("brightness_variation", 0.06)
+	mat.set_shader_parameter("saturation_variation", 0.04)
 	
 	materials["claimed"][faction_id] = mat
 	return mat
@@ -166,8 +193,13 @@ func _create_tile_mesh(pos: Vector2i) -> void:
 		TileTypes.Type.ROCK, TileTypes.Type.WALL:
 			mesh_instance.mesh = _create_wall_mesh(pos, tile)
 			mesh_instance.material_override = _get_material_for_tile(tile)
-		TileTypes.Type.FLOOR, TileTypes.Type.CLAIMED:
+		TileTypes.Type.FLOOR:
 			mesh_instance.mesh = _create_floor_mesh(pos, tile)
+			mesh_instance.material_override = _get_material_for_tile(tile)
+		TileTypes.Type.CLAIMED:
+			# Calculate tile seed for per-tile variation (hash of position)
+			var tile_seed := _get_tile_seed(pos)
+			mesh_instance.mesh = _create_floor_mesh(pos, tile, tile_seed)
 			mesh_instance.material_override = _get_material_for_tile(tile)
 	
 	# Position the mesh
@@ -382,8 +414,15 @@ func _should_render_wall_face(pos: Vector2i, direction: Vector2i, neighbors: Dic
 	return false
 
 
+## Generate a deterministic seed for a tile position (for per-tile variation)
+func _get_tile_seed(pos: Vector2i) -> float:
+	# Simple hash combining x and y coordinates
+	return float(pos.x * 73856093 ^ pos.y * 19349663)
+
+
 ## Create a floor mesh with organic deformations
-func _create_floor_mesh(pos: Vector2i, _tile: Dictionary) -> Mesh:
+## tile_seed: Optional seed for per-tile variation (passed via UV2 for shader use)
+func _create_floor_mesh(pos: Vector2i, _tile: Dictionary, tile_seed: float = 0.0) -> Mesh:
 	var size := map_data.tile_size
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
@@ -418,7 +457,7 @@ func _create_floor_mesh(pos: Vector2i, _tile: Dictionary) -> Mesh:
 			var v2 := vertices[i + subdivs + 2]
 			var v3 := vertices[i + subdivs + 1]
 			
-			_add_quad_with_vertices(st, v0, v1, v2, v3)
+			_add_quad_with_vertices(st, v0, v1, v2, v3, tile_seed)
 	
 	st.generate_normals()
 	return st.commit()
@@ -452,7 +491,8 @@ func _add_quad(st: SurfaceTool, v0: Vector3, v1: Vector3, v2: Vector3, v3: Vecto
 
 
 ## Add a quad with auto-calculated UVs based on local position
-func _add_quad_with_vertices(st: SurfaceTool, v0: Vector3, v1: Vector3, v2: Vector3, v3: Vector3) -> void:
+## tile_seed: Optional seed stored in UV2.x for per-tile shader variation
+func _add_quad_with_vertices(st: SurfaceTool, v0: Vector3, v1: Vector3, v2: Vector3, v3: Vector3, tile_seed: float = 0.0) -> void:
 	# Calculate normal from vertices
 	var edge1 := v1 - v0
 	var edge2 := v3 - v0
@@ -461,25 +501,34 @@ func _add_quad_with_vertices(st: SurfaceTool, v0: Vector3, v1: Vector3, v2: Vect
 	# Calculate UVs based on XZ position (assuming horizontal surface)
 	var size := map_data.tile_size if map_data else 4.0
 	
+	# UV2 stores tile seed for per-tile variation in shaders
+	var uv2 := Vector2(tile_seed, 0.0)
+	
 	st.set_normal(normal)
 	
 	st.set_uv(Vector2(v0.x / size, v0.z / size))
+	st.set_uv2(uv2)
 	st.add_vertex(v0)
 	
 	st.set_uv(Vector2(v1.x / size, v1.z / size))
+	st.set_uv2(uv2)
 	st.add_vertex(v1)
 	
 	st.set_uv(Vector2(v2.x / size, v2.z / size))
+	st.set_uv2(uv2)
 	st.add_vertex(v2)
 	
 	# Second triangle
 	st.set_uv(Vector2(v0.x / size, v0.z / size))
+	st.set_uv2(uv2)
 	st.add_vertex(v0)
 	
 	st.set_uv(Vector2(v2.x / size, v2.z / size))
+	st.set_uv2(uv2)
 	st.add_vertex(v2)
 	
 	st.set_uv(Vector2(v3.x / size, v3.z / size))
+	st.set_uv2(uv2)
 	st.add_vertex(v3)
 
 
