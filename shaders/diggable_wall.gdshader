@@ -29,6 +29,9 @@ uniform float brightness_variation : hint_range(0.0, 0.2) = 0.08;
 uniform float top_rotation_variation : hint_range(0.0, 1.0) = 0.3;
 uniform float top_offset_variation : hint_range(0.0, 0.3) = 0.15;
 
+// Triplanar blend sharpness
+uniform float triplanar_sharpness : hint_range(1.0, 16.0) = 4.0;
+
 // World position and normal
 varying vec3 world_pos;
 varying vec3 world_normal;
@@ -156,32 +159,37 @@ vec3 derive_procedural_normal(vec2 pos, float strength) {
 	return normal * 0.5 + 0.5;
 }
 
+// Calculate triplanar blend weights
+vec3 get_triplanar_weights(vec3 normal) {
+	vec3 weights = abs(normal);
+	weights = pow(weights, vec3(triplanar_sharpness));
+	weights /= (weights.x + weights.y + weights.z);
+	return weights;
+}
+
 void fragment() {
-	// Detect if this is a top face (Y-facing)
-	float top_factor = max(0.0, world_normal.y);
-	bool is_top = top_factor > 0.5;
+	// Triplanar blend weights based on world normal
+	vec3 blend = get_triplanar_weights(world_normal);
 	
-	vec2 final_uv;
+	// Calculate base UVs for each axis projection
+	float scale = texture_scale / 4.0;
+	vec2 uv_x = world_pos.zy * scale;  // YZ plane (side faces facing X)
+	vec2 uv_z = world_pos.xy * scale;  // XY plane (side faces facing Z)
 	
-	if (is_top) {
-		// Top face: use world XZ with smooth rotation/offset
-		vec2 base_uv = world_pos.xz * texture_scale / 4.0;
-		
-		// Apply smooth rotation
-		float rotation = get_smooth_rotation(world_pos.xz);
-		vec2 rotated_uv = rotate_uv(base_uv, rotation, base_uv);
-		
-		// Apply smooth offset
-		vec2 offset = get_smooth_offset(world_pos.xz);
-		final_uv = rotated_uv + offset;
-	} else {
-		// Side faces: use mesh UVs
-		final_uv = UV * texture_scale;
-	}
+	// Top face UV with smooth rotation/offset variation
+	vec2 base_uv_y = world_pos.xz * scale;
+	float rotation = get_smooth_rotation(world_pos.xz);
+	vec2 rotated_uv = rotate_uv(base_uv_y, rotation, base_uv_y);
+	vec2 offset = get_smooth_offset(world_pos.xz);
+	vec2 uv_y = rotated_uv + offset;
 	
-	// Sample albedo texture
-	vec4 tex = texture(albedo_texture, final_uv);
-	vec3 base_color = tex.rgb;
+	// Sample texture with triplanar projection
+	vec3 tex_x = texture(albedo_texture, uv_x).rgb;
+	vec3 tex_y = texture(albedo_texture, uv_y).rgb;
+	vec3 tex_z = texture(albedo_texture, uv_z).rgb;
+	
+	// Blend textures based on normal direction
+	vec3 base_color = tex_x * blend.x + tex_y * blend.y + tex_z * blend.z;
 	
 	// Apply tint
 	base_color = mix(base_color, tint_color.rgb * base_color, tint_strength);
@@ -195,11 +203,22 @@ void fragment() {
 	ROUGHNESS = roughness;
 	METALLIC = metallic;
 	
-	// Derive normals from texture
-	vec3 texture_normal = derive_texture_normal(final_uv);
+	// Derive normals with triplanar projection
+	vec3 norm_x = derive_texture_normal(uv_x);
+	vec3 norm_y = derive_texture_normal(uv_y);
+	vec3 norm_z = derive_texture_normal(uv_z);
 	
-	// Derive procedural normal from world-space noise
-	vec3 procedural_normal = derive_procedural_normal(world_pos.xz, deformation_strength);
+	// Blend texture normals
+	vec3 texture_normal = norm_x * blend.x + norm_y * blend.y + norm_z * blend.z;
+	
+	// Add procedural variation
+	vec2 proc_uv = uv_y;
+	if (blend.x > blend.y && blend.x > blend.z) {
+		proc_uv = uv_x;
+	} else if (blend.z > blend.y) {
+		proc_uv = uv_z;
+	}
+	vec3 procedural_normal = derive_procedural_normal(proc_uv * 4.0, deformation_strength);
 	
 	// Blend texture and procedural normals
 	vec3 tex_n = texture_normal * 2.0 - 1.0;

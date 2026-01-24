@@ -115,6 +115,7 @@ func _setup_materials() -> void:
 	wall_mat.set_shader_parameter("brightness_variation", 0.08)
 	wall_mat.set_shader_parameter("top_rotation_variation", 0.3)  # Smooth UV rotation on top
 	wall_mat.set_shader_parameter("top_offset_variation", 0.15)  # Smooth UV offset on top
+	wall_mat.set_shader_parameter("triplanar_sharpness", 4.0)  # Sharp blending between faces
 	materials["wall"] = wall_mat
 	
 	# Floor material - textured loose sand/dirt with deformation
