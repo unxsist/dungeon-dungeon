@@ -29,6 +29,7 @@ const EDGE_SUBDIVISIONS := 4  ## Number of subdivisions per edge
 const EDGE_VARIATION_AMOUNT := 0.15  ## Max displacement as fraction of tile size
 const HEIGHT_VARIATION_AMOUNT := 0.1  ## Max height variation for walls
 const WALL_FACE_VARIATION_AMOUNT := 0.05  ## Subtle side face deformation
+const FLOOR_HEIGHT_VARIATION := 0.08  ## Subtle floor deformation for dungeon feel
 
 ## Border shading settings
 @export var border_padding: float = 20.0
@@ -37,9 +38,19 @@ const WALL_FACE_VARIATION_AMOUNT := 0.05  ## Subtle side face deformation
 
 var border_shader: Shader
 
-## Claimed floor shader and texture
+## Floor shaders and textures
+var unclaimed_floor_shader: Shader
+var unclaimed_floor_texture: Texture2D
 var claimed_floor_shader: Shader
 var claimed_floor_texture: Texture2D
+
+## Wall shader and texture
+var diggable_wall_shader: Shader
+var diggable_wall_texture: Texture2D
+
+## Rock shader and texture
+var rock_shader: Shader
+var rock_texture: Texture2D
 
 ## Noise generator for procedural variations
 var noise: FastNoiseLite
@@ -67,24 +78,63 @@ func _setup_noise() -> void:
 
 ## Setup materials for tile types
 func _setup_materials() -> void:
-	# Rock material - dark gray
-	var rock_mat := StandardMaterial3D.new()
-	rock_mat.albedo_color = Color(0.2, 0.2, 0.22)
-	rock_mat.roughness = 0.9
-	rock_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	# Rock material - textured with triplanar mapping and depth from luminance
+	rock_shader = load("res://shaders/rock.gdshader")
+	rock_texture = load("res://resources/textures/rock.png")
+	var rock_mat := ShaderMaterial.new()
+	rock_mat.shader = rock_shader
+	rock_mat.set_shader_parameter("albedo_texture", rock_texture)
+	rock_mat.set_shader_parameter("texture_scale", 1.0)
+	rock_mat.set_shader_parameter("roughness", 0.9)
+	rock_mat.set_shader_parameter("top_darkening", 0.25)  # Darken top face
+	rock_mat.set_shader_parameter("normal_strength", 1.2)  # Depth from light/dark
+	rock_mat.set_shader_parameter("normal_sample_offset", 0.004)
+	rock_mat.set_shader_parameter("deformation_strength", 0.3)
+	rock_mat.set_shader_parameter("noise_scale", 0.2)
+	rock_mat.set_shader_parameter("procedural_blend", 0.15)
+	rock_mat.set_shader_parameter("brightness_variation", 0.05)
+	rock_mat.set_shader_parameter("top_rotation_variation", 0.3)  # Smooth UV rotation on top
+	rock_mat.set_shader_parameter("top_offset_variation", 0.15)  # Smooth UV offset on top
+	rock_mat.set_shader_parameter("triplanar_sharpness", 4.0)  # Sharp blending between faces
 	materials["rock"] = rock_mat
 	
-	# Wall material - brown/earth
-	var wall_mat := StandardMaterial3D.new()
-	wall_mat.albedo_color = Color(0.45, 0.35, 0.25)
-	wall_mat.roughness = 0.85
-	wall_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	# Wall material - textured diggable wall
+	diggable_wall_shader = load("res://shaders/diggable_wall.gdshader")
+	diggable_wall_texture = load("res://resources/textures/diggable_wall.png")
+	var wall_mat := ShaderMaterial.new()
+	wall_mat.shader = diggable_wall_shader
+	wall_mat.set_shader_parameter("albedo_texture", diggable_wall_texture)
+	wall_mat.set_shader_parameter("texture_scale", 1.0)
+	wall_mat.set_shader_parameter("tint_color", Color(0.9, 0.85, 0.8))
+	wall_mat.set_shader_parameter("tint_strength", 0.1)
+	wall_mat.set_shader_parameter("roughness", 0.85)
+	wall_mat.set_shader_parameter("normal_strength", 1.2)
+	wall_mat.set_shader_parameter("deformation_strength", 0.5)
+	wall_mat.set_shader_parameter("noise_scale", 0.3)
+	wall_mat.set_shader_parameter("procedural_blend", 0.3)
+	wall_mat.set_shader_parameter("brightness_variation", 0.08)
+	wall_mat.set_shader_parameter("top_rotation_variation", 0.3)  # Smooth UV rotation on top
+	wall_mat.set_shader_parameter("top_offset_variation", 0.15)  # Smooth UV offset on top
 	materials["wall"] = wall_mat
 	
-	# Floor material - gray stone
-	var floor_mat := StandardMaterial3D.new()
-	floor_mat.albedo_color = Color(0.5, 0.48, 0.45)
-	floor_mat.roughness = 0.7
+	# Floor material - textured loose sand/dirt with deformation
+	unclaimed_floor_shader = load("res://shaders/unclaimed_floor.gdshader")
+	unclaimed_floor_texture = load("res://resources/textures/unclaimed_floor.png")
+	var floor_mat := ShaderMaterial.new()
+	floor_mat.shader = unclaimed_floor_shader
+	floor_mat.set_shader_parameter("albedo_texture", unclaimed_floor_texture)
+	floor_mat.set_shader_parameter("texture_scale", 1.0)
+	floor_mat.set_shader_parameter("tint_color", Color(1.0, 0.98, 0.95))
+	floor_mat.set_shader_parameter("tint_strength", 0.05)
+	floor_mat.set_shader_parameter("roughness", 0.85)
+	floor_mat.set_shader_parameter("deformation_strength", 1.5)  # Higher for messy sand look
+	floor_mat.set_shader_parameter("noise_scale", 0.5)
+	floor_mat.set_shader_parameter("uv_distortion_amount", 0.15)  # Loose sand UV distortion
+	floor_mat.set_shader_parameter("uv_distortion_scale", 0.3)
+	floor_mat.set_shader_parameter("rotation_variation", 0.4)  # Per-tile rotation variation
+	floor_mat.set_shader_parameter("offset_variation", 0.25)  # Per-tile offset variation
+	floor_mat.set_shader_parameter("normal_strength", 1.5)
+	floor_mat.set_shader_parameter("brightness_variation", 0.1)
 	materials["floor"] = floor_mat
 	
 	# Claimed floor shader and texture
@@ -136,6 +186,10 @@ func _get_claimed_material(faction_id: int) -> ShaderMaterial:
 	mat.set_shader_parameter("normal_strength", 1.5)
 	mat.set_shader_parameter("brightness_variation", 0.06)
 	mat.set_shader_parameter("saturation_variation", 0.04)
+	# Procedural deformation for dungeon floor feel
+	mat.set_shader_parameter("deformation_strength", 0.6)
+	mat.set_shader_parameter("noise_scale", 0.4)
+	mat.set_shader_parameter("procedural_blend", 0.4)
 	
 	materials["claimed"][faction_id] = mat
 	return mat
@@ -333,6 +387,7 @@ func _add_wall_face(st: SurfaceTool, pos: Vector2i, size: float, height: float,
 	var normal := Vector3(direction.x, 0, direction.y)
 	
 	# Get the edge vertices from top face based on direction
+	# Bottom vertices use floor height sampling to match adjacent floor deformation
 	var edge_top: Array[Vector3] = []
 	var edge_bottom: Array[Vector3] = []
 	
@@ -340,7 +395,11 @@ func _add_wall_face(st: SurfaceTool, pos: Vector2i, size: float, height: float,
 		for x in range(subdivs + 1):
 			var top_v := top_vertices[x]
 			edge_top.append(top_v)
-			edge_bottom.append(Vector3(top_v.x, 0, top_v.z))
+			# Sample floor height at world position for bottom vertex
+			var world_x := pos.x * size + top_v.x
+			var world_z := pos.y * size + top_v.z
+			var floor_y := _get_floor_height_at(world_x, world_z)
+			edge_bottom.append(Vector3(top_v.x, floor_y, top_v.z))
 		# Reverse for correct winding
 		edge_top.reverse()
 		edge_bottom.reverse()
@@ -350,14 +409,20 @@ func _add_wall_face(st: SurfaceTool, pos: Vector2i, size: float, height: float,
 			var idx := subdivs * (subdivs + 1) + x
 			var top_v := top_vertices[idx]
 			edge_top.append(top_v)
-			edge_bottom.append(Vector3(top_v.x, 0, top_v.z))
+			var world_x := pos.x * size + top_v.x
+			var world_z := pos.y * size + top_v.z
+			var floor_y := _get_floor_height_at(world_x, world_z)
+			edge_bottom.append(Vector3(top_v.x, floor_y, top_v.z))
 			
 	elif direction == Vector2i(-1, 0):  # West
 		for z in range(subdivs + 1):
 			var idx := z * (subdivs + 1)
 			var top_v := top_vertices[idx]
 			edge_top.append(top_v)
-			edge_bottom.append(Vector3(top_v.x, 0, top_v.z))
+			var world_x := pos.x * size + top_v.x
+			var world_z := pos.y * size + top_v.z
+			var floor_y := _get_floor_height_at(world_x, world_z)
+			edge_bottom.append(Vector3(top_v.x, floor_y, top_v.z))
 		# Reverse for correct winding
 		edge_top.reverse()
 		edge_bottom.reverse()
@@ -367,7 +432,10 @@ func _add_wall_face(st: SurfaceTool, pos: Vector2i, size: float, height: float,
 			var idx := z * (subdivs + 1) + subdivs
 			var top_v := top_vertices[idx]
 			edge_top.append(top_v)
-			edge_bottom.append(Vector3(top_v.x, 0, top_v.z))
+			var world_x := pos.x * size + top_v.x
+			var world_z := pos.y * size + top_v.z
+			var floor_y := _get_floor_height_at(world_x, world_z)
+			edge_bottom.append(Vector3(top_v.x, floor_y, top_v.z))
 	
 	# Create quads along the wall face with continuous UVs
 	for i in range(subdivs):
@@ -378,8 +446,13 @@ func _add_wall_face(st: SurfaceTool, pos: Vector2i, size: float, height: float,
 		
 		# Apply subtle deformation along the face normal using world coordinates.
 		# Only deform the bottom edge to keep the top seam tight with the top face.
-		b0 = _offset_wall_face_vertex(pos, b0, size, normal)
-		b1 = _offset_wall_face_vertex(pos, b1, size, normal)
+		# Skip deformation at corners (first and last vertices) to prevent gaps where faces meet.
+		var is_first := (i == 0)
+		var is_last := (i == subdivs - 1)
+		if not is_first:
+			b0 = _offset_wall_face_vertex(pos, b0, size, normal)
+		if not is_last:
+			b1 = _offset_wall_face_vertex(pos, b1, size, normal)
 		
 		# Calculate continuous UVs across the entire face (not per-subdivision)
 		var u0 := float(i) / float(subdivs)
@@ -400,6 +473,12 @@ func _offset_wall_face_vertex(pos: Vector2i, local_v: Vector3, size: float, norm
 	var noise_val := noise.get_noise_2d(world_x * 0.6 + 1000.0, world_z * 0.6 + 1000.0)
 	var offset := noise_val * WALL_FACE_VARIATION_AMOUNT * size
 	return local_v + normal * offset
+
+
+## Get floor height at a world position (matches floor mesh deformation)
+func _get_floor_height_at(world_x: float, world_z: float) -> float:
+	var height_var := noise.get_noise_2d(world_x * 0.5, world_z * 0.5)
+	return FLOOR_Y + height_var * FLOOR_HEIGHT_VARIATION
 
 
 ## Check if wall face should be rendered (adjacent to walkable tile)
@@ -443,8 +522,8 @@ func _create_floor_mesh(pos: Vector2i, _tile: Dictionary, tile_seed: float = 0.0
 			var world_z := pos.y * size + vz
 			
 			# Subtle height variation using world coordinates (shared edges get same values)
-			var height_var := noise.get_noise_2d(world_x * 0.5, world_z * 0.5)
-			var vy := FLOOR_Y + height_var * 0.05
+			# Wall bottom edges sample this same height for seamless connection
+			var vy := _get_floor_height_at(world_x, world_z)
 			
 			vertices.append(Vector3(vx, vy, vz))
 	
