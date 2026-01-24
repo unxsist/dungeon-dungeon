@@ -10,8 +10,14 @@ extends Node
 ## Reference to the map data (set via signal)
 var map_data: MapData = null
 
-## Currently hovered tile position (-1, -1 if none)
+## Currently hovered tile position (-1, -1 if none) - only for selectable tiles
 var hovered_tile: Vector2i = Vector2i(-1, -1)
+
+## Current cursor tile position (any tile) - used for cursor light, etc.
+var cursor_tile: Vector2i = Vector2i(-1, -1)
+
+## Current cursor world position (actual 3D hit point)
+var cursor_world_pos: Vector3 = Vector3.ZERO
 
 ## Selection state
 var is_selecting: bool = false
@@ -80,9 +86,22 @@ func _unhandled_input(event: InputEvent) -> void:
 ## Update hovered tile based on mouse position
 func _update_hover() -> void:
 	var mouse_pos := get_viewport().get_mouse_position()
-	var tile_pos := screen_to_tile(mouse_pos)
+	var result := screen_to_tile_with_world_pos(mouse_pos)
+	var raw_tile_pos: Vector2i = result[0]
+	var world_hit_pos: Vector3 = result[1]
+	var hit_valid: bool = result[2]
 	
-	# Only show hover for diggable tiles
+	# Emit cursor position for any valid tile (used by cursor light, etc.)
+	if raw_tile_pos != cursor_tile:
+		cursor_tile = raw_tile_pos
+		GameEvents.cursor_tile_changed.emit(cursor_tile)
+	
+	# Always emit world position for smooth cursor light following
+	cursor_world_pos = world_hit_pos
+	GameEvents.cursor_world_position_changed.emit(world_hit_pos, hit_valid)
+	
+	# Filter to only selectable (diggable) tiles for hover highlight
+	var tile_pos := raw_tile_pos
 	if tile_pos != Vector2i(-1, -1):
 		var tile = map_data.get_tile(tile_pos)
 		if not tile or not _is_selectable_tile(tile["type"]):
@@ -101,12 +120,19 @@ func _update_hover() -> void:
 ## Convert screen position to tile position using geometric ray-AABB intersection.
 ## This is more reliable than physics raycasts as it doesn't depend on collision timing.
 func screen_to_tile(screen_pos: Vector2) -> Vector2i:
+	var result := screen_to_tile_with_world_pos(screen_pos)
+	return result[0]
+
+
+## Convert screen position to tile position AND world hit position.
+## Returns [tile_pos: Vector2i, world_pos: Vector3, is_valid: bool]
+func screen_to_tile_with_world_pos(screen_pos: Vector2) -> Array:
 	if not camera_controller or not map_data:
-		return Vector2i(-1, -1)
+		return [Vector2i(-1, -1), Vector3.ZERO, false]
 	
 	var camera := camera_controller.get_camera()
 	if not camera:
-		return Vector2i(-1, -1)
+		return [Vector2i(-1, -1), Vector3.ZERO, false]
 	
 	var ray_origin := camera.project_ray_origin(screen_pos)
 	var ray_dir := camera.project_ray_normal(screen_pos)
@@ -127,9 +153,10 @@ func screen_to_tile(screen_pos: Vector2) -> Vector2i:
 				closest_dist = dist
 				closest_tile = pos
 	
-	# If we hit a wall, return it
+	# If we hit a wall, return the hit position
 	if closest_tile != Vector2i(-1, -1):
-		return closest_tile
+		var world_hit := ray_origin + ray_dir * closest_dist
+		return [closest_tile, world_hit, true]
 	
 	# Fall back to ground plane intersection for floor tiles
 	var plane := Plane(Vector3.UP, 0)
@@ -143,9 +170,9 @@ func screen_to_tile(screen_pos: Vector2) -> Vector2i:
 		)
 		
 		if map_data.is_valid_position(tile_pos):
-			return tile_pos
+			return [tile_pos, hit_pos, true]
 	
-	return Vector2i(-1, -1)
+	return [Vector2i(-1, -1), Vector3.ZERO, false]
 
 
 ## Get tiles that are potentially visible from the camera position.

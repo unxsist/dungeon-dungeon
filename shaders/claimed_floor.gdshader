@@ -13,6 +13,10 @@ uniform float color_replace_strength : hint_range(0.0, 1.0) = 0.0;  // For repla
 uniform float roughness : hint_range(0.0, 1.0) = 0.7;
 uniform float metallic : hint_range(0.0, 1.0) = 0.0;
 
+// Emission for claimed territory glow (trusted area)
+uniform float emission_strength : hint_range(0.0, 0.5) = 0.08;
+uniform vec3 emission_tint : source_color = vec3(0.4, 0.5, 0.7);  // Subtle blue-ish default
+
 // Normal map derived from texture (Sobel filter)
 uniform float normal_strength : hint_range(0.0, 3.0) = 1.5;
 uniform float normal_sample_offset : hint_range(0.001, 0.01) = 0.003;
@@ -170,6 +174,11 @@ void fragment() {
 	ALBEDO = base_color;
 	ROUGHNESS = roughness;
 	METALLIC = metallic;
+	
+	// Subtle emission for claimed territory glow
+	// Blend emission tint with faction color for faction-specific glow
+	vec3 emission_color = mix(emission_tint, faction_color.rgb, 0.5);
+	EMISSION = emission_color * emission_strength;
 	
 	// Derive normal map from texture luminance
 	vec3 texture_normal = derive_normal(UV);

@@ -1,4 +1,4 @@
-[gd_scene load_steps=9 format=3 uid="uid://dkgx2wm7e5rqy"]
+[gd_scene load_steps=10 format=3 uid="uid://dkgx2wm7e5rqy"]
 
 [ext_resource type="Script" uid="uid://cx8v440tf0dv8" path="res://scripts/presentation/tile_renderer.gd" id="1_tile_renderer"]
 [ext_resource type="Script" uid="uid://dxbn87fb4kewn" path="res://scripts/presentation/camera_controller.gd" id="2_camera_controller"]
@@ -7,13 +7,14 @@
 [ext_resource type="Script" uid="uid://b68x6wgim3uru" path="res://scripts/presentation/highlight_manager.gd" id="5_highlight_manager"]
 [ext_resource type="Script" uid="uid://0v3rj7mspwm1" path="res://scripts/systems/action_handler.gd" id="6_action_handler"]
 [ext_resource type="Script" uid="uid://srokrgnoxdub" path="res://scripts/systems/fog_system.gd" id="7_fog_system"]
+[ext_resource type="Script" path="res://scripts/presentation/cursor_light.gd" id="8_cursor_light"]
 
 [sub_resource type="Environment" id="Environment_1"]
 background_mode = 1
-background_color = Color(0.1, 0.1, 0.12, 1)
+background_color = Color(0.05, 0.05, 0.07, 1)
 ambient_light_source = 2
 ambient_light_color = Color(0.3, 0.3, 0.35, 1)
-ambient_light_energy = 0.5
+ambient_light_energy = 0.4
 tonemap_mode = 2
 ssao_enabled = true
 
@@ -23,9 +24,9 @@ ssao_enabled = true
 environment = SubResource("Environment_1")
 
 [node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
-transform = Transform3D(0.866025, -0.353553, 0.353553, 0, 0.707107, 0.707107, -0.5, -0.612372, 0.612372, 20, 30, 20)
+transform = Transform3D(1, 0, 0, 0, 0.258819, 0.965926, 0, -0.965926, 0.258819, 0, 30, 0)
 light_color = Color(1, 0.98, 0.95, 1)
-light_energy = 1.2
+light_energy = 0.3
 shadow_enabled = true
 
 [node name="TileRenderer" type="Node3D" parent="."]
@@ -64,3 +65,11 @@ script = ExtResource("5_highlight_manager")
 tile_renderer = NodePath("../TileRenderer")
 fog_system = NodePath("../Systems/FogSystem")
 selection_system = NodePath("../Systems/SelectionSystem")
+
+[node name="CursorLight" type="Node3D" parent="."]
+script = ExtResource("8_cursor_light")
+light_energy = 1.8
+light_range = 18.0
+light_color = Color(1, 0.85, 0.6, 1)
+light_height = 10.0
+follow_speed = 15.0
