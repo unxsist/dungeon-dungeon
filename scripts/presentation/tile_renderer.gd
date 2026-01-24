@@ -47,6 +47,7 @@ var claimed_floor_texture: Texture2D
 ## Wall shader and texture
 var diggable_wall_shader: Shader
 var diggable_wall_texture: Texture2D
+var claimed_wall_texture: Texture2D
 
 ## Rock shader and texture
 var rock_shader: Shader
@@ -117,6 +118,25 @@ func _setup_materials() -> void:
 	wall_mat.set_shader_parameter("top_offset_variation", 0.15)  # Smooth UV offset on top
 	wall_mat.set_shader_parameter("triplanar_sharpness", 4.0)  # Sharp blending between faces
 	materials["wall"] = wall_mat
+	
+	# Claimed wall material - for wall faces adjacent to claimed floors (darker, more dungeon-like)
+	claimed_wall_texture = load("res://resources/textures/claimed_wall.png")
+	var claimed_wall_mat := ShaderMaterial.new()
+	claimed_wall_mat.shader = diggable_wall_shader
+	claimed_wall_mat.set_shader_parameter("albedo_texture", claimed_wall_texture)
+	claimed_wall_mat.set_shader_parameter("texture_scale", 1.0)
+	claimed_wall_mat.set_shader_parameter("tint_color", Color(0.35, 0.32, 0.3))  # Much darker tint
+	claimed_wall_mat.set_shader_parameter("tint_strength", 0.6)  # Strong darkening
+	claimed_wall_mat.set_shader_parameter("roughness", 0.85)
+	claimed_wall_mat.set_shader_parameter("normal_strength", 1.4)
+	claimed_wall_mat.set_shader_parameter("deformation_strength", 0.4)
+	claimed_wall_mat.set_shader_parameter("noise_scale", 0.3)
+	claimed_wall_mat.set_shader_parameter("procedural_blend", 0.25)
+	claimed_wall_mat.set_shader_parameter("brightness_variation", 0.04)  # Less variation to keep it dark
+	claimed_wall_mat.set_shader_parameter("top_rotation_variation", 0.3)
+	claimed_wall_mat.set_shader_parameter("top_offset_variation", 0.15)
+	claimed_wall_mat.set_shader_parameter("triplanar_sharpness", 4.0)
+	materials["claimed_wall"] = claimed_wall_mat
 	
 	# Floor material - textured loose sand/dirt with deformation
 	unclaimed_floor_shader = load("res://shaders/unclaimed_floor.gdshader")
@@ -223,9 +243,10 @@ func render_map() -> void:
 
 ## Clear all tile meshes
 func _clear_meshes() -> void:
-	for mesh in tile_meshes.values():
-		if is_instance_valid(mesh):
-			mesh.queue_free()
+	for meshes in tile_meshes.values():
+		for mesh in meshes:
+			if is_instance_valid(mesh):
+				mesh.queue_free()
 	tile_meshes.clear()
 
 	if border_mesh and is_instance_valid(border_mesh):
@@ -240,34 +261,62 @@ func _create_tile_mesh(pos: Vector2i) -> void:
 		return
 	
 	var tile_type: TileTypes.Type = tile["type"]
-	var mesh_instance := MeshInstance3D.new()
-	mesh_instance.name = "Tile_%d_%d" % [pos.x, pos.y]
+	var meshes: Array[MeshInstance3D] = []
+	
+	# Calculate world position for mesh placement
+	var world_pos := map_data.tile_to_world(pos)
+	world_pos.y = 0  # Base at ground level
+	var mesh_position := world_pos - Vector3(map_data.tile_size * 0.5, 0, map_data.tile_size * 0.5)
 	
 	# Create mesh based on tile type
 	match tile_type:
 		TileTypes.Type.ROCK, TileTypes.Type.WALL:
-			mesh_instance.mesh = _create_wall_mesh(pos, tile)
-			mesh_instance.material_override = _get_material_for_tile(tile)
+			var wall_meshes := _create_wall_mesh(pos, tile)
+			
+			# Main mesh (top face + regular side faces)
+			var main_instance := MeshInstance3D.new()
+			main_instance.name = "Tile_%d_%d" % [pos.x, pos.y]
+			main_instance.mesh = wall_meshes["main"]
+			main_instance.material_override = _get_material_for_tile(tile)
+			main_instance.position = mesh_position
+			main_instance.set_meta("tile_pos", pos)
+			tile_container.add_child(main_instance)
+			meshes.append(main_instance)
+			
+			# Claimed wall faces mesh (if any faces adjacent to claimed tiles)
+			if wall_meshes["has_claimed_faces"] and wall_meshes["claimed"]:
+				var claimed_instance := MeshInstance3D.new()
+				claimed_instance.name = "Tile_%d_%d_claimed" % [pos.x, pos.y]
+				claimed_instance.mesh = wall_meshes["claimed"]
+				claimed_instance.material_override = materials["claimed_wall"]
+				claimed_instance.position = mesh_position
+				claimed_instance.set_meta("tile_pos", pos)
+				tile_container.add_child(claimed_instance)
+				meshes.append(claimed_instance)
+		
 		TileTypes.Type.FLOOR:
+			var mesh_instance := MeshInstance3D.new()
+			mesh_instance.name = "Tile_%d_%d" % [pos.x, pos.y]
 			mesh_instance.mesh = _create_floor_mesh(pos, tile)
 			mesh_instance.material_override = _get_material_for_tile(tile)
+			mesh_instance.position = mesh_position
+			mesh_instance.set_meta("tile_pos", pos)
+			tile_container.add_child(mesh_instance)
+			meshes.append(mesh_instance)
+		
 		TileTypes.Type.CLAIMED:
 			# Calculate tile seed for per-tile variation (hash of position)
 			var tile_seed := _get_tile_seed(pos)
+			var mesh_instance := MeshInstance3D.new()
+			mesh_instance.name = "Tile_%d_%d" % [pos.x, pos.y]
 			mesh_instance.mesh = _create_floor_mesh(pos, tile, tile_seed)
 			mesh_instance.material_override = _get_material_for_tile(tile)
+			mesh_instance.position = mesh_position
+			mesh_instance.set_meta("tile_pos", pos)
+			tile_container.add_child(mesh_instance)
+			meshes.append(mesh_instance)
 	
-	# Position the mesh
-	var world_pos := map_data.tile_to_world(pos)
-	world_pos.y = 0  # Base at ground level
-	mesh_instance.position = world_pos - Vector3(map_data.tile_size * 0.5, 0, map_data.tile_size * 0.5)
-	
-	# Add to scene
-	tile_container.add_child(mesh_instance)
-	tile_meshes[pos] = mesh_instance
-	
-	# Store tile position in metadata
-	mesh_instance.set_meta("tile_pos", pos)
+	tile_meshes[pos] = meshes
 
 
 ## Update border mesh around map bounds
@@ -306,11 +355,14 @@ func _update_border_mesh() -> void:
 	border_mesh.material_override = mat
 
 
-## Create a wall/rock mesh (raised box) with organic deformations
-func _create_wall_mesh(pos: Vector2i, _tile: Dictionary) -> Mesh:
+## Create wall/rock meshes (raised box) with organic deformations
+## Returns a dictionary with "main" mesh (top + regular faces) and "claimed" mesh (claimed-adjacent faces)
+func _create_wall_mesh(pos: Vector2i, _tile: Dictionary) -> Dictionary:
 	var size := map_data.tile_size
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var st_main := SurfaceTool.new()
+	var st_claimed := SurfaceTool.new()
+	st_main.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st_claimed.begin(Mesh.PRIMITIVE_TRIANGLES)
 	
 	var h := WALL_HEIGHT
 	
@@ -339,7 +391,7 @@ func _create_wall_mesh(pos: Vector2i, _tile: Dictionary) -> Mesh:
 			
 			top_vertices.append(Vector3(vx, vy, vz))
 	
-	# Create top face triangles
+	# Create top face triangles (always on main mesh)
 	for z in range(subdivs):
 		for x in range(subdivs):
 			var i := z * (subdivs + 1) + x
@@ -348,37 +400,34 @@ func _create_wall_mesh(pos: Vector2i, _tile: Dictionary) -> Mesh:
 			var v2 := top_vertices[i + subdivs + 2]
 			var v3 := top_vertices[i + subdivs + 1]
 			
-			_add_quad_with_vertices(st, v0, v1, v2, v3)
+			_add_quad_with_vertices(st_main, v0, v1, v2, v3)
 	
 	# Side faces - only render if adjacent to floor/claimed tile
 	# Use the edge vertices from top face for seamless connection
+	# Route to claimed mesh if neighbor is claimed
+	var directions := [Vector2i(0, -1), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(1, 0)]
+	var has_claimed_faces := false
 	
-	# North face (negative Z)
-	if _should_render_wall_face(pos, Vector2i(0, -1), neighbors):
-		_add_wall_face(st, pos, size, h, 
-			Vector2i(0, -1),  # Direction
-			top_vertices, subdivs)
+	for direction in directions:
+		if _should_render_wall_face(pos, direction, neighbors):
+			var is_claimed := _is_neighbor_claimed(direction, neighbors)
+			var st := st_claimed if is_claimed else st_main
+			if is_claimed:
+				has_claimed_faces = true
+			_add_wall_face(st, pos, size, h, direction, top_vertices, subdivs)
 	
-	# South face (positive Z)
-	if _should_render_wall_face(pos, Vector2i(0, 1), neighbors):
-		_add_wall_face(st, pos, size, h,
-			Vector2i(0, 1),
-			top_vertices, subdivs)
+	st_main.generate_normals()
+	var result := {
+		"main": st_main.commit(),
+		"claimed": null,
+		"has_claimed_faces": has_claimed_faces
+	}
 	
-	# West face (negative X)
-	if _should_render_wall_face(pos, Vector2i(-1, 0), neighbors):
-		_add_wall_face(st, pos, size, h,
-			Vector2i(-1, 0),
-			top_vertices, subdivs)
+	if has_claimed_faces:
+		st_claimed.generate_normals()
+		result["claimed"] = st_claimed.commit()
 	
-	# East face (positive X)
-	if _should_render_wall_face(pos, Vector2i(1, 0), neighbors):
-		_add_wall_face(st, pos, size, h,
-			Vector2i(1, 0),
-			top_vertices, subdivs)
-	
-	st.generate_normals()
-	return st.commit()
+	return result
 
 
 ## Add a wall face with subdivisions matching the top surface
@@ -491,6 +540,18 @@ func _should_render_wall_face(pos: Vector2i, direction: Vector2i, neighbors: Dic
 	if neighbor:
 		var neighbor_type: TileTypes.Type = neighbor["type"]
 		return TileTypes.is_walkable(neighbor_type)
+	return false
+
+
+## Check if neighbor tile is claimed (for claimed wall texture)
+func _is_neighbor_claimed(direction: Vector2i, neighbors: Dictionary) -> bool:
+	if not neighbors.has(direction):
+		return false
+	
+	var neighbor = neighbors[direction]
+	if neighbor:
+		var neighbor_type: TileTypes.Type = neighbor["type"]
+		return neighbor_type == TileTypes.Type.CLAIMED
 	return false
 
 
@@ -636,16 +697,29 @@ func _on_tile_changed(pos: Vector2i, _old_type: int, _new_type: int) -> void:
 
 ## Handle tile ownership change
 func _on_tile_ownership_changed(pos: Vector2i, _old_faction: int, _new_faction: int) -> void:
+	# Update the claimed tile itself
 	_update_tile(pos)
+	
+	# Update neighboring walls as their faces may need claimed_wall texture now
+	for dir: Vector2i in MapData.DIRECTIONS:
+		var neighbor_pos: Vector2i = pos + dir
+		if map_data.is_valid_position(neighbor_pos):
+			var neighbor = map_data.get_tile(neighbor_pos)
+			if neighbor:
+				var neighbor_type: TileTypes.Type = neighbor["type"]
+				# Only update if neighbor is a wall or rock (they have side faces)
+				if neighbor_type == TileTypes.Type.WALL or neighbor_type == TileTypes.Type.ROCK:
+					_update_tile(neighbor_pos)
 
 
 ## Update a single tile mesh
 func _update_tile(pos: Vector2i) -> void:
-	# Remove old mesh
+	# Remove old meshes
 	if tile_meshes.has(pos):
-		var old_mesh = tile_meshes[pos]
-		if is_instance_valid(old_mesh):
-			old_mesh.queue_free()
+		var old_meshes = tile_meshes[pos]
+		for mesh in old_meshes:
+			if is_instance_valid(mesh):
+				mesh.queue_free()
 		tile_meshes.erase(pos)
 	
 	# Create new mesh
@@ -663,6 +737,14 @@ func _update_tile_and_neighbors(pos: Vector2i) -> void:
 			_update_tile(neighbor_pos)
 
 
-## Get tile mesh at position
+## Get tile mesh at position (returns the main mesh)
 func get_tile_mesh(pos: Vector2i) -> MeshInstance3D:
-	return tile_meshes.get(pos)
+	var meshes = tile_meshes.get(pos)
+	if meshes and meshes.size() > 0:
+		return meshes[0]
+	return null
+
+
+## Get all tile meshes at position
+func get_tile_meshes(pos: Vector2i) -> Array:
+	return tile_meshes.get(pos, [])
