@@ -1,0 +1,11 @@
+[gd_scene load_steps=3 format=3 uid="uid://bmq6xk8v2f4oi"]
+
+[ext_resource type="PackedScene" uid="uid://dkgx2wm7e5rqy" path="res://scenes/game_world.tscn" id="1_game_world"]
+[ext_resource type="Script" uid="uid://dy3n35kd5hshv" path="res://scripts/main.gd" id="2_main"]
+
+[node name="Main" type="Node"]
+script = ExtResource("2_main")
+
+[node name="GameWorld" parent="." instance=ExtResource("1_game_world")]
+
+[node name="UI" type="CanvasLayer" parent="."]

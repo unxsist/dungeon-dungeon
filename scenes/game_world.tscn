@@ -1,0 +1,65 @@
+[gd_scene load_steps=9 format=3 uid="uid://dkgx2wm7e5rqy"]
+
+[ext_resource type="Script" path="res://scripts/presentation/tile_renderer.gd" id="1_tile_renderer"]
+[ext_resource type="Script" path="res://scripts/presentation/camera_controller.gd" id="2_camera_controller"]
+[ext_resource type="Script" path="res://scripts/systems/map_system.gd" id="3_map_system"]
+[ext_resource type="Script" path="res://scripts/systems/selection_system.gd" id="4_selection_system"]
+[ext_resource type="Script" path="res://scripts/presentation/highlight_manager.gd" id="5_highlight_manager"]
+[ext_resource type="Script" path="res://scripts/systems/action_handler.gd" id="6_action_handler"]
+[ext_resource type="Script" path="res://scripts/systems/fog_system.gd" id="7_fog_system"]
+
+[sub_resource type="Environment" id="Environment_1"]
+background_mode = 1
+background_color = Color(0.1, 0.1, 0.12, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.3, 0.3, 0.35, 1)
+ambient_light_energy = 0.5
+tonemap_mode = 2
+ssao_enabled = true
+
+[node name="GameWorld" type="Node3D"]
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Environment_1")
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(0.866025, -0.353553, 0.353553, 0, 0.707107, 0.707107, -0.5, -0.612372, 0.612372, 20, 30, 20)
+light_color = Color(1, 0.98, 0.95, 1)
+light_energy = 1.2
+shadow_enabled = true
+
+[node name="TileRenderer" type="Node3D" parent="."]
+script = ExtResource("1_tile_renderer")
+
+[node name="TileContainer" type="Node3D" parent="TileRenderer"]
+
+[node name="SelectionOverlay" type="Node3D" parent="."]
+
+[node name="CameraPivot" type="Node3D" parent="."]
+script = ExtResource("2_camera_controller")
+
+[node name="Camera3D" type="Camera3D" parent="CameraPivot"]
+transform = Transform3D(1, 0, 0, 0, 0.5, -0.866025, 0, 0.866025, 0.5, 0, 25.9808, -15)
+fov = 50.0
+near = 0.5
+far = 200.0
+
+[node name="Systems" type="Node" parent="."]
+
+[node name="MapSystem" type="Node" parent="Systems"]
+script = ExtResource("3_map_system")
+
+[node name="SelectionSystem" type="Node" parent="Systems" node_paths=PackedStringArray("camera_controller")]
+script = ExtResource("4_selection_system")
+camera_controller = NodePath("../../CameraPivot")
+
+[node name="ActionHandler" type="Node" parent="Systems"]
+script = ExtResource("6_action_handler")
+
+[node name="FogSystem" type="Node" parent="Systems"]
+script = ExtResource("7_fog_system")
+
+[node name="HighlightManager" type="Node" parent="." node_paths=PackedStringArray("tile_renderer", "fog_system")]
+script = ExtResource("5_highlight_manager")
+tile_renderer = NodePath("../TileRenderer")
+fog_system = NodePath("../Systems/FogSystem")
