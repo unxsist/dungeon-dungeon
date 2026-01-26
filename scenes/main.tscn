@@ -6,6 +6,7 @@
 
 [node name="Main" type="Node"]
 script = ExtResource("2_main")
+default_map_path = "res://maps/large_dungeon.json"
 
 [node name="GameWorld" parent="." instance=ExtResource("1_game_world")]
 
