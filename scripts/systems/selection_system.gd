@@ -428,3 +428,8 @@ func get_all_diggable_tiles() -> Array[Vector2i]:
 			result.append(pos)
 	
 	return result
+
+
+## Get current hover tile (any tile, not just selectable)
+func get_current_hover_tile() -> Vector2i:
+	return cursor_tile

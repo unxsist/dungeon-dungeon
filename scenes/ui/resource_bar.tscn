@@ -1,0 +1,40 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/resource_bar.gd" id="1_resource_bar"]
+
+[node name="ResourceBar" type="PanelContainer"]
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -160.0
+offset_top = 10.0
+offset_right = -10.0
+offset_bottom = 50.0
+grow_horizontal = 0
+script = ExtResource("1_resource_bar")
+
+[node name="MarginContainer" type="MarginContainer" parent="."]
+layout_mode = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 5
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 5
+
+[node name="HBoxContainer" type="HBoxContainer" parent="MarginContainer"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="GoldIcon" type="Label" parent="MarginContainer/HBoxContainer"]
+layout_mode = 2
+text = "Gold:"
+
+[node name="GoldLabel" type="Label" parent="MarginContainer/HBoxContainer"]
+visible = false
+layout_mode = 2
+text = "Gold:"
+
+[node name="GoldValue" type="Label" parent="MarginContainer/HBoxContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "16,000"
+horizontal_alignment = 2

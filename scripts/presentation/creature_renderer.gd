@@ -17,6 +17,14 @@ var texture_cache: Dictionary = {}
 ## Animation time tracking for working bounce: { creature_id: float }
 var animation_time: Dictionary = {}
 
+## Spawn animation tracking: { creature_id: { "progress": float, "start_scale": Vector3 } }
+var spawn_animations: Dictionary = {}
+
+## Spawn animation settings
+const SPAWN_ANIMATION_DURATION := 0.5  ## Seconds for spawn animation
+const SPAWN_START_SCALE := Vector3(0.1, 0.1, 0.1)  ## Start very small
+const SPAWN_OVERSHOOT := 1.2  ## Bounce overshoot multiplier
+
 ## Working animation settings
 const WORK_BOUNCE_HEIGHT := 0.15  ## How high the bounce goes
 const WORK_BOUNCE_SPEED := 8.0    ## Bounces per second
@@ -46,6 +54,7 @@ func _ready() -> void:
 	GameEvents.creature_spawned.connect(_on_creature_spawned)
 	GameEvents.creature_despawned.connect(_on_creature_despawned)
 	GameEvents.creature_state_changed.connect(_on_creature_state_changed)
+	GameEvents.portal_creature_spawned.connect(_on_portal_creature_spawned)
 
 
 ## Initialize when map is loaded
@@ -73,6 +82,28 @@ func _on_creature_spawned(creature: CreatureData) -> void:
 	print("CreatureRenderer: Created sprite for creature %d at position %s" % [creature.id, creature.visual_position])
 
 
+## Handle creature spawning from portal with special effect
+func _on_portal_creature_spawned(portal_pos: Vector2i, creature: CreatureData) -> void:
+	# Start spawn animation for this creature
+	if creature_sprites.has(creature.id):
+		var sprite: Node3D = creature_sprites[creature.id]
+		
+		# Initialize spawn animation
+		spawn_animations[creature.id] = {
+			"progress": 0.0,
+			"start_scale": SPAWN_START_SCALE,
+			"target_scale": sprite.scale
+		}
+		
+		# Start with small scale
+		sprite.scale = SPAWN_START_SCALE
+		
+		# Create spawn particles effect
+		_create_spawn_particles(portal_pos, creature)
+		
+		print("CreatureRenderer: Starting spawn animation for creature %d from portal %s" % [creature.id, portal_pos])
+
+
 ## Remove sprite for despawned creature
 func _on_creature_despawned(creature_id: int) -> void:
 	if not creature_sprites.has(creature_id):
@@ -97,10 +128,17 @@ func _process(delta: float) -> void:
 	if not map_data:
 		return
 	
+	# Update spawn animations
+	_update_spawn_animations(delta)
+	
 	for creature in map_data.creatures:
 		if creature_sprites.has(creature.id):
 			var sprite: Node3D = creature_sprites[creature.id]
 			_update_sprite_position(sprite, creature)
+			
+			# Skip working animation if spawn animation is active
+			if spawn_animations.has(creature.id):
+				continue
 			
 			# Animate working creatures with a bounce
 			if creature.state == CreatureTypes.State.WORKING:
@@ -109,6 +147,35 @@ func _process(delta: float) -> void:
 				# Reset animation when not working
 				animation_time.erase(creature.id)
 				sprite.scale = SPRITE_SCALE
+
+
+## Update spawn animations for all creatures being spawned
+func _update_spawn_animations(delta: float) -> void:
+	var completed_ids: Array[int] = []
+	
+	for creature_id in spawn_animations.keys():
+		var anim: Dictionary = spawn_animations[creature_id]
+		anim["progress"] += delta / SPAWN_ANIMATION_DURATION
+		
+		if anim["progress"] >= 1.0:
+			# Animation complete
+			completed_ids.append(creature_id)
+			if creature_sprites.has(creature_id):
+				creature_sprites[creature_id].scale = anim["target_scale"]
+		else:
+			# Elastic ease-out animation
+			var t: float = anim["progress"]
+			var ease_t := _elastic_ease_out(t)
+			
+			if creature_sprites.has(creature_id):
+				var sprite: Node3D = creature_sprites[creature_id]
+				var target_scale: Vector3 = anim["target_scale"]
+				var start_scale: Vector3 = anim["start_scale"]
+				sprite.scale = start_scale.lerp(target_scale, ease_t)
+	
+	# Remove completed animations
+	for id in completed_ids:
+		spawn_animations.erase(id)
 
 
 ## Animate a working creature with a bounce/wiggle
@@ -289,3 +356,73 @@ func find_creature_at_screen_position(screen_pos: Vector2, camera: Camera3D) -> 
 				closest_id = creature.id
 	
 	return closest_id
+
+
+## Elastic ease-out for bouncy spawn animation
+func _elastic_ease_out(t: float) -> float:
+	if t <= 0.0:
+		return 0.0
+	if t >= 1.0:
+		return 1.0
+	
+	var p := 0.3
+	var s := p / 4.0
+	return pow(2.0, -10.0 * t) * sin((t - s) * TAU / p) + 1.0
+
+
+## Create particle burst effect at spawn location
+func _create_spawn_particles(portal_pos: Vector2i, creature: CreatureData) -> void:
+	if not map_data:
+		return
+	
+	var world_pos := map_data.tile_to_world(portal_pos)
+	
+	# Create a temporary particle system
+	var particles := GPUParticles3D.new()
+	particles.name = "SpawnParticles_%d" % creature.id
+	particles.position = world_pos + Vector3(0, 0.5, 0)
+	particles.emitting = true
+	particles.one_shot = true
+	particles.explosiveness = 1.0
+	particles.amount = 16
+	particles.lifetime = 0.8
+	
+	# Create particle material
+	var material := ParticleProcessMaterial.new()
+	material.direction = Vector3(0, 1, 0)
+	material.spread = 45.0
+	material.initial_velocity_min = 2.0
+	material.initial_velocity_max = 4.0
+	material.gravity = Vector3(0, -5, 0)
+	material.scale_min = 0.1
+	material.scale_max = 0.3
+	
+	# Color based on faction
+	var faction_color := Color(0.2, 0.8, 0.5)  # Default green
+	if map_data:
+		var faction := map_data.get_faction(creature.faction_id)
+		if faction:
+			faction_color = faction.color
+	
+	material.color = faction_color
+	particles.process_material = material
+	
+	# Create a simple mesh for particles
+	var mesh := SphereMesh.new()
+	mesh.radius = 0.1
+	mesh.height = 0.2
+	
+	var mesh_material := StandardMaterial3D.new()
+	mesh_material.albedo_color = faction_color
+	mesh_material.emission_enabled = true
+	mesh_material.emission = faction_color
+	mesh_material.emission_energy_multiplier = 2.0
+	mesh.material = mesh_material
+	
+	particles.draw_pass_1 = mesh
+	
+	add_child(particles)
+	
+	# Auto-remove after particles finish
+	var timer := get_tree().create_timer(1.5)
+	timer.timeout.connect(func(): particles.queue_free())

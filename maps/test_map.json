@@ -110,15 +110,21 @@
 	{ "x": 10, "y": 9, "type": "floor" },
 	{ "x": 11, "y": 9, "type": "floor" },
 	{ "x": 12, "y": 9, "type": "floor" },
-	{ "x": 13, "y": 9, "type": "floor" }
+	{ "x": 13, "y": 9, "type": "floor" },
+	{ "x": 5, "y": 14, "type": "portal", "faction_id": 0 },
+	{ "x": 15, "y": 14, "type": "portal", "faction_id": 1 }
   ],
   "factions": [
-	{ "id": 0, "name": "Player", "color": "#3366ff", "is_player": true },
-	{ "id": 1, "name": "Enemy", "color": "#ff3333", "is_player": false }
+	{ "id": 0, "name": "Player", "color": "#3366ff", "is_player": true, "starting_gold": 16000 },
+	{ "id": 1, "name": "Enemy", "color": "#ff3333", "is_player": false, "starting_gold": 8000 }
   ],
   "spawn_points": [
 	{ "faction_id": 0, "x": 5, "y": 10 },
 	{ "faction_id": 1, "x": 15, "y": 10 }
+  ],
+  "portals": [
+	{ "x": 5, "y": 14, "spawn_rate": 30.0, "max_creatures": 8, "creature_types": ["imp", "bile_demon"] },
+	{ "x": 15, "y": 14, "spawn_rate": 45.0, "max_creatures": 6, "creature_types": ["imp"] }
   ],
   "creatures": [
 	{ "type": "imp", "faction_id": 0, "x": 4, "y": 10, "level": 1 },

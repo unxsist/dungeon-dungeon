@@ -53,6 +53,19 @@ var claimed_wall_texture: Texture2D
 var rock_shader: Shader
 var rock_texture: Texture2D
 
+## Portal shader
+var portal_shader: Shader
+
+## Room floor shader
+var room_floor_shader: Shader
+
+## Cached room textures: { RoomTypes.Type: Texture2D }
+var room_textures: Dictionary = {}
+
+## Cached per-tile room materials: { Vector2i: ShaderMaterial }
+## Each room tile gets its own material instance with unique edge flags
+var room_tile_materials: Dictionary = {}
+
 ## Noise generator for procedural variations
 var noise: FastNoiseLite
 
@@ -67,6 +80,9 @@ func _ready() -> void:
 	GameEvents.map_loaded.connect(_on_map_loaded)
 	GameEvents.tile_changed.connect(_on_tile_changed)
 	GameEvents.tile_ownership_changed.connect(_on_tile_ownership_changed)
+	GameEvents.room_created.connect(_on_room_created)
+	GameEvents.room_removed.connect(_on_room_removed)
+	GameEvents.portal_claimed.connect(_on_portal_claimed)
 
 
 ## Setup noise generator for procedural variations
@@ -164,6 +180,15 @@ func _setup_materials() -> void:
 	
 	# Claimed materials by faction (will be generated dynamically)
 	materials["claimed"] = {}
+	
+	# Portal shader and materials
+	portal_shader = load("res://shaders/portal.gdshader")
+	materials["portal_unclaimed"] = _create_portal_material(false)
+	materials["portal_claimed"] = {}  # Per-faction claimed portal materials
+	
+	# Room floor shader and materials
+	room_floor_shader = load("res://shaders/room_floor.gdshader")
+	materials["rooms"] = {}  # Per room-type materials, keyed by RoomTypes.Type
 
 
 ## Setup border shader
@@ -216,12 +241,145 @@ func _get_claimed_material(faction_id: int) -> ShaderMaterial:
 	return mat
 
 
+## Create portal material
+func _create_portal_material(is_claimed: bool, faction_id: int = -1) -> ShaderMaterial:
+	var mat := ShaderMaterial.new()
+	mat.shader = portal_shader
+	
+	mat.set_shader_parameter("is_claimed", 1.0 if is_claimed else 0.0)
+	mat.set_shader_parameter("emission_strength", 2.0)
+	mat.set_shader_parameter("pulse_strength", 0.3)
+	mat.set_shader_parameter("swirl_speed", 0.5)
+	mat.set_shader_parameter("swirl_intensity", 0.5)
+	
+	# Customize color based on faction if claimed
+	if is_claimed and faction_id >= 0 and map_data:
+		var faction := map_data.get_faction(faction_id)
+		if faction:
+			mat.set_shader_parameter("claimed_color", faction.color)
+	
+	return mat
+
+
+## Get or create portal material for a claimed faction
+func _get_portal_material(faction_id: int) -> ShaderMaterial:
+	if faction_id < 0:
+		return materials["portal_unclaimed"]
+	
+	if materials["portal_claimed"].has(faction_id):
+		return materials["portal_claimed"][faction_id]
+	
+	var mat := _create_portal_material(true, faction_id)
+	materials["portal_claimed"][faction_id] = mat
+	return mat
+
+
+## Get or create room material for a room type (base material, not per-tile)
+func _get_room_material_base(room_type: RoomTypes.Type) -> ShaderMaterial:
+	if materials["rooms"].has(room_type):
+		return materials["rooms"][room_type]
+	
+	var mat := ShaderMaterial.new()
+	mat.shader = room_floor_shader
+	
+	# Load room-specific texture or fall back to claimed floor
+	var room_texture := _get_room_texture(room_type)
+	mat.set_shader_parameter("albedo_texture", room_texture)
+	
+	# Set room-specific color
+	var room_color := RoomTypes.get_color(room_type)
+	mat.set_shader_parameter("room_color", room_color)
+	
+	# Adjust color mix based on whether we have a custom texture
+	# If we have a custom texture, we use less color tinting to show the texture better
+	var has_custom_texture := RoomTypes.get_texture_path(room_type) != ""
+	mat.set_shader_parameter("color_mix", 0.15 if has_custom_texture else 0.45)
+	
+	mat.set_shader_parameter("roughness", 0.75)
+	mat.set_shader_parameter("emission_strength", 0.03)
+	mat.set_shader_parameter("normal_strength", 1.2)
+	mat.set_shader_parameter("deformation_strength", 0.5)
+	mat.set_shader_parameter("noise_scale", 0.4)
+	mat.set_shader_parameter("procedural_blend", 0.3)
+	mat.set_shader_parameter("brightness_variation", 0.08)
+	
+	materials["rooms"][room_type] = mat
+	return mat
+
+
+## Get or load texture for a room type
+func _get_room_texture(room_type: RoomTypes.Type) -> Texture2D:
+	# Check cache first
+	if room_textures.has(room_type):
+		return room_textures[room_type]
+	
+	# Try to load room-specific texture
+	var texture_path := RoomTypes.get_texture_path(room_type)
+	if texture_path != "":
+		var texture: Texture2D = load(texture_path)
+		if texture:
+			print("TileRenderer: Loaded room texture: %s" % texture_path)
+			room_textures[room_type] = texture
+			return texture
+		else:
+			push_warning("TileRenderer: Failed to load room texture: %s" % texture_path)
+	
+	# Fall back to claimed floor texture
+	room_textures[room_type] = claimed_floor_texture
+	return claimed_floor_texture
+
+
+## Calculate edge flags for a room tile
+## Returns Vector4 with (north, east, south, west) flags (1.0 = boundary edge, 0.0 = interior)
+func _calculate_room_edge_flags(pos: Vector2i, room: RoomData) -> Vector4:
+	var flags := Vector4(0.0, 0.0, 0.0, 0.0)
+	
+	# Direction order: North (0,-1), East (1,0), South (0,1), West (-1,0)
+	var north_pos := pos + Vector2i(0, -1)
+	var east_pos := pos + Vector2i(1, 0)
+	var south_pos := pos + Vector2i(0, 1)
+	var west_pos := pos + Vector2i(-1, 0)
+	
+	# Check if each neighbor is NOT part of the same room (making this edge a boundary)
+	if not room.tiles.has(north_pos):
+		flags.x = 1.0
+	if not room.tiles.has(east_pos):
+		flags.y = 1.0
+	if not room.tiles.has(south_pos):
+		flags.z = 1.0
+	if not room.tiles.has(west_pos):
+		flags.w = 1.0
+	
+	return flags
+
+
+## Get or create a per-tile room material with edge flags
+func _get_room_material(room_type: RoomTypes.Type, pos: Vector2i, room: RoomData) -> ShaderMaterial:
+	# Check cache first
+	if room_tile_materials.has(pos):
+		return room_tile_materials[pos]
+	
+	# Get the base material and duplicate it for this tile
+	var base_mat := _get_room_material_base(room_type)
+	var mat := base_mat.duplicate() as ShaderMaterial
+	
+	# Calculate and set edge flags for this specific tile
+	var edge_flags := _calculate_room_edge_flags(pos, room)
+	mat.set_shader_parameter("edge_flags", edge_flags)
+	
+	# Cache the per-tile material
+	room_tile_materials[pos] = mat
+	return mat
+
+
 ## Handle map loaded event
 func _on_map_loaded(data: Resource) -> void:
 	map_data = data as MapData
 	if map_data:
 		# Clear claimed materials cache (factions may have changed)
 		materials["claimed"] = {}
+		# Clear per-tile room materials cache
+		room_tile_materials.clear()
 		render_map()
 		_update_border_mesh()
 
@@ -310,7 +468,19 @@ func _create_tile_mesh(pos: Vector2i) -> void:
 			var mesh_instance := MeshInstance3D.new()
 			mesh_instance.name = "Tile_%d_%d" % [pos.x, pos.y]
 			mesh_instance.mesh = _create_floor_mesh(pos, tile, tile_seed)
-			mesh_instance.material_override = _get_material_for_tile(tile)
+			mesh_instance.material_override = _get_material_for_tile_at(tile, pos)
+			mesh_instance.position = mesh_position
+			mesh_instance.set_meta("tile_pos", pos)
+			tile_container.add_child(mesh_instance)
+			meshes.append(mesh_instance)
+		
+		TileTypes.Type.PORTAL:
+			# Portal uses floor mesh but with portal material
+			var tile_seed := _get_tile_seed(pos)
+			var mesh_instance := MeshInstance3D.new()
+			mesh_instance.name = "Tile_%d_%d_portal" % [pos.x, pos.y]
+			mesh_instance.mesh = _create_floor_mesh(pos, tile, tile_seed)
+			mesh_instance.material_override = _get_portal_material(tile["faction_id"])
 			mesh_instance.position = mesh_position
 			mesh_instance.set_meta("tile_pos", pos)
 			tile_container.add_child(mesh_instance)
@@ -748,3 +918,38 @@ func get_tile_mesh(pos: Vector2i) -> MeshInstance3D:
 ## Get all tile meshes at position
 func get_tile_meshes(pos: Vector2i) -> Array:
 	return tile_meshes.get(pos, [])
+
+
+## Get material for a tile at a specific position (checks for room membership)
+func _get_material_for_tile_at(tile: Dictionary, pos: Vector2i) -> Material:
+	var tile_type: TileTypes.Type = tile["type"]
+	
+	# Check if this position is part of a room
+	if map_data and tile_type == TileTypes.Type.CLAIMED:
+		var room := map_data.get_room_at(pos)
+		if room:
+			return _get_room_material(room.room_type, pos, room)
+	
+	# Fall back to standard material
+	return _get_material_for_tile(tile)
+
+
+## Handle room created event - update all tiles in the room
+func _on_room_created(room: RoomData) -> void:
+	# Clear per-tile materials for this room (new edge flags needed)
+	for tile_pos: Vector2i in room.tiles:
+		room_tile_materials.erase(tile_pos)
+		_update_tile(tile_pos)
+
+
+## Handle room removed event - update all tiles that were in the room
+func _on_room_removed(room: RoomData) -> void:
+	# Clear per-tile materials for this room
+	for tile_pos: Vector2i in room.tiles:
+		room_tile_materials.erase(tile_pos)
+		_update_tile(tile_pos)
+
+
+## Handle portal claimed event - update the portal tile's material
+func _on_portal_claimed(pos: Vector2i, _faction_id: int) -> void:
+	_update_tile(pos)

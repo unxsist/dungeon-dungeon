@@ -14,8 +14,15 @@ extends Resource
 ## Current tile position on the 2D grid
 @export var tile_position: Vector2i = Vector2i.ZERO
 
+## World position in 3D space
+var world_position: Vector3 = Vector3.ZERO
+
 ## Interpolated 2D position for smooth visual movement
 var visual_position: Vector2 = Vector2.ZERO
+
+## Portal that spawned this creature (for tracking portal creature limits)
+## Vector2i(-1, -1) if not spawned from a portal
+var portal_origin: Vector2i = Vector2i(-1, -1)
 
 ## Current level (1-10)
 @export var level: int = 1

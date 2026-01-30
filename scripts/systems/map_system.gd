@@ -86,6 +86,9 @@ func _parse_map_data(data: Dictionary) -> MapData:
 	for faction_data in factions_array:
 		var faction := FactionData.from_dict(faction_data)
 		map.factions.append(faction)
+		# Parse starting gold for this faction
+		var starting_gold: int = faction_data.get("starting_gold", 0)
+		map.faction_gold[faction.id] = starting_gold
 	
 	# Parse spawn points
 	var spawns_array: Array = data.get("spawn_points", [])
@@ -121,6 +124,22 @@ func _parse_map_data(data: Dictionary) -> MapData:
 		if parts.size() == 2:
 			var pos := Vector2i(int(parts[0]), int(parts[1]))
 			map.marked_for_digging[pos] = dig_markings_data[pos_str]
+	
+	# Parse portal configurations
+	var portals_array: Array = data.get("portals", [])
+	for portal_data in portals_array:
+		map.portal_configs.append({
+			"position": Vector2i(portal_data.get("x", 0), portal_data.get("y", 0)),
+			"spawn_rate": portal_data.get("spawn_rate", 15.0),
+			"max_creatures": portal_data.get("max_creatures", 10),
+			"creature_types": portal_data.get("creature_types", ["imp"]),
+		})
+	
+	# Parse rooms (if saved mid-game)
+	var rooms_array: Array = data.get("rooms", [])
+	for room_data_dict in rooms_array:
+		var room := RoomData.from_dict(room_data_dict)
+		map.add_room(room)
 	
 	return map
 
@@ -321,7 +340,10 @@ func _build_save_data() -> Dictionary:
 	
 	var factions_data: Array[Dictionary] = []
 	for faction in current_map.factions:
-		factions_data.append(faction.to_dict())
+		var faction_dict := faction.to_dict()
+		# Include current gold in save
+		faction_dict["starting_gold"] = current_map.get_gold(faction.id)
+		factions_data.append(faction_dict)
 	
 	# Save creatures
 	var creatures_data: Array[Dictionary] = []
@@ -339,6 +361,22 @@ func _build_save_data() -> Dictionary:
 	for pos in current_map.marked_for_digging.keys():
 		var pos_str := "%d,%d" % [pos.x, pos.y]
 		dig_markings_data[pos_str] = current_map.marked_for_digging[pos]
+	
+	# Save portal configurations
+	var portals_data: Array[Dictionary] = []
+	for portal_config in current_map.portal_configs:
+		portals_data.append({
+			"x": portal_config["position"].x,
+			"y": portal_config["position"].y,
+			"spawn_rate": portal_config["spawn_rate"],
+			"max_creatures": portal_config["max_creatures"],
+			"creature_types": portal_config["creature_types"],
+		})
+	
+	# Save rooms
+	var rooms_data: Array[Dictionary] = []
+	for room in current_map.rooms:
+		rooms_data.append(room.to_dict())
 	
 	return {
 		"meta": {
@@ -360,6 +398,8 @@ func _build_save_data() -> Dictionary:
 		"creatures": creatures_data,
 		"claim_progress": claim_progress_data,
 		"dig_markings": dig_markings_data,
+		"portals": portals_data,
+		"rooms": rooms_data,
 	}
 
 

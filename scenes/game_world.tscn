@@ -1,4 +1,4 @@
-[gd_scene load_steps=15 format=3 uid="uid://dkgx2wm7e5rqy"]
+[gd_scene load_steps=17 format=3 uid="uid://dkgx2wm7e5rqy"]
 
 [ext_resource type="Script" uid="uid://cx8v440tf0dv8" path="res://scripts/presentation/tile_renderer.gd" id="1_tile_renderer"]
 [ext_resource type="Script" uid="uid://dxbn87fb4kewn" path="res://scripts/presentation/camera_controller.gd" id="2_camera_controller"]
@@ -13,6 +13,8 @@
 [ext_resource type="Script" path="res://scripts/systems/task_system.gd" id="11_task_system"]
 [ext_resource type="Script" path="res://scripts/systems/creature_system.gd" id="12_creature_system"]
 [ext_resource type="Script" path="res://scripts/presentation/creature_renderer.gd" id="13_creature_renderer"]
+[ext_resource type="Script" path="res://scripts/systems/portal_system.gd" id="14_portal_system"]
+[ext_resource type="Script" path="res://scripts/systems/room_system.gd" id="15_room_system"]
 
 [sub_resource type="Environment" id="Environment_1"]
 background_mode = 1
@@ -73,6 +75,12 @@ script = ExtResource("11_task_system")
 
 [node name="CreatureSystem" type="Node" parent="Systems"]
 script = ExtResource("12_creature_system")
+
+[node name="PortalSystem" type="Node" parent="Systems"]
+script = ExtResource("14_portal_system")
+
+[node name="RoomSystem" type="Node" parent="Systems"]
+script = ExtResource("15_room_system")
 
 [node name="HighlightManager" type="Node" parent="." node_paths=PackedStringArray("tile_renderer", "fog_system", "selection_system")]
 script = ExtResource("5_highlight_manager")

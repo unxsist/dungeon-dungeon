@@ -33,6 +33,14 @@ var debug_diggable_tiles: Array[Vector2i] = []
 @export var dig_color: Color = Color(1.0, 0.5, 0.0, 0.6)
 @export var claim_color: Color = Color(0.0, 1.0, 0.5, 0.6)
 @export var debug_diggable_color: Color = Color(0.0, 1.0, 0.0, 0.3)
+@export var room_valid_color: Color = Color(0.2, 0.8, 0.2, 0.5)
+@export var room_invalid_color: Color = Color(0.8, 0.2, 0.2, 0.5)
+@export var room_existing_color: Color = Color(0.5, 0.5, 0.5, 0.3)  # Dimmed color for existing room tiles
+
+## Room placement preview state
+var room_preview_tiles: Array[Vector2i] = []
+var room_preview_existing_tiles: Array[Vector2i] = []  # Tiles already part of same room type
+var room_preview_valid: bool = false
 
 
 func _ready() -> void:
@@ -46,6 +54,9 @@ func _ready() -> void:
 	GameEvents.selection_cleared.connect(_on_selection_cleared)
 	GameEvents.tile_changed.connect(_on_tile_changed)
 	GameEvents.visibility_updated.connect(_on_visibility_updated)
+	GameEvents.room_placement_preview.connect(_on_room_placement_preview)
+	GameEvents.room_placement_cancelled.connect(_on_room_placement_cancelled)
+	GameEvents.room_created.connect(_on_room_created)
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -366,3 +377,67 @@ func _update_fog_state(pos: Vector2i) -> void:
 			vis_state = 2
 	
 	mat.set_shader_parameter("visibility_state", vis_state)
+
+
+## Handle room placement preview
+func _on_room_placement_preview(new_tiles: Array[Vector2i], existing_tiles: Array[Vector2i], is_valid: bool, _cost: int) -> void:
+	# Clear previous preview tiles
+	_clear_room_preview()
+	
+	# Store and highlight new preview tiles
+	room_preview_tiles = new_tiles.duplicate()
+	room_preview_existing_tiles = existing_tiles.duplicate()
+	room_preview_valid = is_valid
+	
+	# Highlight new tiles with valid/invalid color
+	var preview_color := room_valid_color if is_valid else room_invalid_color
+	for pos in room_preview_tiles:
+		_set_tile_room_preview(pos, true, preview_color)
+	
+	# Highlight existing same-type tiles with dimmed color (already placed)
+	for pos in room_preview_existing_tiles:
+		_set_tile_room_preview(pos, true, room_existing_color)
+
+
+## Handle room placement cancelled
+func _on_room_placement_cancelled() -> void:
+	_clear_room_preview()
+
+
+## Handle room created - clear preview
+func _on_room_created(_room: RoomData) -> void:
+	_clear_room_preview()
+
+
+## Clear room preview highlights
+func _clear_room_preview() -> void:
+	for pos in room_preview_tiles:
+		_set_tile_room_preview(pos, false, Color.WHITE)
+		_update_fog_state(pos)
+	room_preview_tiles.clear()
+	
+	for pos in room_preview_existing_tiles:
+		_set_tile_room_preview(pos, false, Color.WHITE)
+		_update_fog_state(pos)
+	room_preview_existing_tiles.clear()
+
+
+## Set room preview highlight on a tile
+func _set_tile_room_preview(pos: Vector2i, enabled: bool, color: Color) -> void:
+	if not tile_renderer:
+		return
+	
+	var mesh := tile_renderer.get_tile_mesh(pos)
+	if not mesh:
+		return
+	
+	var mat := _get_or_create_highlight_material(pos, mesh)
+	if mat:
+		mat.set_shader_parameter("is_highlighted", enabled)
+		mat.set_shader_parameter("is_selected", enabled)
+		mat.set_shader_parameter("highlight_color", color)
+		mat.set_shader_parameter("selection_color", color)
+		
+		# Force visibility for preview to work
+		if enabled:
+			mat.set_shader_parameter("visibility_state", 2)

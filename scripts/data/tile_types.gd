@@ -6,7 +6,8 @@ enum Type {
 	ROCK,    ## Indestructible bedrock
 	WALL,    ## Diggable earth/stone
 	FLOOR,   ## Dug out, walkable, can be claimed
-	CLAIMED  ## Owned by a faction
+	CLAIMED, ## Owned by a faction
+	PORTAL,  ## Magical portal that spawns creatures when claimed
 }
 
 ## Properties for each tile type
@@ -43,6 +44,14 @@ const PROPERTIES := {
 		"blocks_sight": false,
 		"default_health": -1,
 	},
+	Type.PORTAL: {
+		"name": "portal",
+		"walkable": true,
+		"diggable": false,
+		"claimable": true,  # Can be claimed by factions
+		"blocks_sight": false,
+		"default_health": -1,
+	},
 }
 
 ## Convert string name to Type enum
@@ -52,6 +61,7 @@ static func from_string(type_name: String) -> Type:
 		"wall": return Type.WALL
 		"floor": return Type.FLOOR
 		"claimed": return Type.CLAIMED
+		"portal": return Type.PORTAL
 		_: 
 			push_warning("Unknown tile type: %s, defaulting to ROCK" % type_name)
 			return Type.ROCK

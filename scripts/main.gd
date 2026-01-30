@@ -31,6 +31,15 @@ extends Node
 ## Reference to the CreatureInfoPanel
 @onready var creature_info_panel: CreatureInfoPanel = $UI/CreatureInfoPanel
 
+## Reference to RoomSystem
+@onready var room_system: RoomSystem = $GameWorld/Systems/RoomSystem
+
+## Reference to ActionHandler
+@onready var action_handler: ActionHandler = $GameWorld/Systems/ActionHandler
+
+## Reference to RoomPanel
+@onready var room_panel: RoomPanel = $UI/RoomPanel
+
 
 func _ready() -> void:
 	# Print controls help
@@ -38,6 +47,9 @@ func _ready() -> void:
 	
 	# Wire up creature systems
 	_setup_creature_systems()
+	
+	# Wire up room systems
+	_setup_room_systems()
 	
 	# Load the default map
 	if default_map_path and FileAccess.file_exists(default_map_path):
@@ -62,6 +74,17 @@ func _setup_creature_systems() -> void:
 		creature_info_panel.set_references(creature_renderer, camera)
 
 
+## Wire up room-related systems
+func _setup_room_systems() -> void:
+	# RoomPanel needs RoomSystem reference
+	if room_panel and room_system:
+		room_panel.set_room_system(room_system)
+	
+	# ActionHandler needs RoomSystem reference
+	if action_handler and room_system:
+		action_handler.set_room_system(room_system)
+
+
 func _print_controls() -> void:
 	print("")
 	print("=== DUNGEON DUNGEON CONTROLS ===")
@@ -74,7 +97,8 @@ func _print_controls() -> void:
 	print("Actions: Right click to perform action on tile")
 	print("         1 = Dig mode (dig out walls)")
 	print("         2 = Claim mode (claim floor tiles)")
-	print("         Esc = Cancel selection")
+	print("         R = Toggle room building panel")
+	print("         Esc = Cancel selection/placement")
 	print("")
 	print("Save/Load: F5 = Quick save, F9 = Quick load")
 	print("Debug: F3 = Toggle fog of war")

@@ -32,6 +32,34 @@ var claim_progress: Dictionary = {}
 ## Original map file path (for delta saves)
 var source_file: String = ""
 
+# ============================================================================
+# Room System
+# ============================================================================
+
+## Room data storage
+var rooms: Array[RoomData] = []
+
+## Next room ID (auto-increment)
+var next_room_id: int = 0
+
+## Quick lookup: tile position -> room ID
+var tile_to_room: Dictionary = {}
+
+# ============================================================================
+# Portal System
+# ============================================================================
+
+## Portal configurations from map file
+## Each: { position: Vector2i, spawn_rate: float, max_creatures: int, creature_types: Array }
+var portal_configs: Array[Dictionary] = []
+
+# ============================================================================
+# Economy System
+# ============================================================================
+
+## Gold amount per faction: { faction_id: int }
+var faction_gold: Dictionary = {}
+
 # Cardinal directions for neighbor lookups
 const DIRECTIONS := [
 	Vector2i(0, -1),  # North
@@ -531,3 +559,136 @@ func get_total_diggers_on_wall(wall_pos: Vector2i) -> int:
 func clear_dig_data(wall_pos: Vector2i) -> void:
 	marked_for_digging.erase(wall_pos)
 	dig_slots.erase(wall_pos)
+
+
+# ============================================================================
+# Room Management
+# ============================================================================
+
+## Add a room to the map
+func add_room(room: RoomData) -> void:
+	if room.id == 0:
+		room.id = next_room_id
+		next_room_id += 1
+	else:
+		next_room_id = maxi(next_room_id, room.id + 1)
+	
+	rooms.append(room)
+	
+	# Update tile_to_room lookup
+	for tile_pos in room.tiles:
+		tile_to_room[tile_pos] = room.id
+
+
+## Remove a room from the map
+func remove_room(room_id: int) -> RoomData:
+	for i in range(rooms.size()):
+		if rooms[i].id == room_id:
+			var room: RoomData = rooms.pop_at(i)
+			# Clear tile_to_room lookup
+			for tile_pos in room.tiles:
+				tile_to_room.erase(tile_pos)
+			return room
+	return null
+
+
+## Get a room by ID
+func get_room(room_id: int) -> RoomData:
+	for room in rooms:
+		if room.id == room_id:
+			return room
+	return null
+
+
+## Get the room at a specific tile position (or null if no room)
+func get_room_at(pos: Vector2i) -> RoomData:
+	if tile_to_room.has(pos):
+		return get_room(tile_to_room[pos])
+	return null
+
+
+## Check if a tile belongs to any room
+func is_tile_in_room(pos: Vector2i) -> bool:
+	return tile_to_room.has(pos)
+
+
+## Get all rooms belonging to a faction
+func get_faction_rooms(faction_id: int) -> Array[RoomData]:
+	var result: Array[RoomData] = []
+	for room in rooms:
+		if room.faction_id == faction_id:
+			result.append(room)
+	return result
+
+
+## Get all rooms of a specific type belonging to a faction
+func get_faction_rooms_of_type(faction_id: int, room_type: RoomTypes.Type) -> Array[RoomData]:
+	var result: Array[RoomData] = []
+	for room in rooms:
+		if room.faction_id == faction_id and room.room_type == room_type:
+			result.append(room)
+	return result
+
+
+# ============================================================================
+# Portal Management
+# ============================================================================
+
+## Get portal configuration at a position (or null if no portal config)
+func get_portal_config(pos: Vector2i) -> Variant:
+	for config in portal_configs:
+		if config["position"] == pos:
+			return config
+	return null
+
+
+## Check if a position is a portal
+func is_portal(pos: Vector2i) -> bool:
+	var tile: Variant = get_tile(pos)
+	if tile:
+		return tile["type"] == TileTypes.Type.PORTAL
+	return false
+
+
+## Get all portal positions
+func get_all_portal_positions() -> Array[Vector2i]:
+	var positions: Array[Vector2i] = []
+	for pos in tiles.keys():
+		if tiles[pos]["type"] == TileTypes.Type.PORTAL:
+			positions.append(pos)
+	return positions
+
+
+# ============================================================================
+# Gold/Economy Management
+# ============================================================================
+
+## Get gold amount for a faction
+func get_gold(faction_id: int) -> int:
+	return faction_gold.get(faction_id, 0)
+
+
+## Set gold amount for a faction
+func set_gold(faction_id: int, amount: int) -> void:
+	var old_amount := get_gold(faction_id)
+	faction_gold[faction_id] = maxi(0, amount)
+	if old_amount != faction_gold[faction_id]:
+		GameEvents.gold_changed.emit(faction_id, old_amount, faction_gold[faction_id])
+
+
+## Add gold to a faction
+func add_gold(faction_id: int, amount: int) -> void:
+	set_gold(faction_id, get_gold(faction_id) + amount)
+
+
+## Spend gold from a faction (returns false if insufficient funds)
+func spend_gold(faction_id: int, amount: int) -> bool:
+	if not can_afford(faction_id, amount):
+		return false
+	set_gold(faction_id, get_gold(faction_id) - amount)
+	return true
+
+
+## Check if a faction can afford a cost
+func can_afford(faction_id: int, amount: int) -> bool:
+	return get_gold(faction_id) >= amount

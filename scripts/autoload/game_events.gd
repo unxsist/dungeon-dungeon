@@ -55,3 +55,19 @@ signal dig_marked(position: Vector2i, faction_id: int)
 signal dig_unmarked(position: Vector2i)
 signal dig_progress(position: Vector2i, health: int, max_health: int)
 signal dig_completed(position: Vector2i)
+
+# Room signals
+signal room_created(room_data: RoomData)
+signal room_removed(room_id: int)
+signal room_sold(room_data: RoomData, refund: int)
+signal room_placement_started(room_type: int)
+signal room_placement_cancelled()
+signal room_placement_preview(new_tiles: Array[Vector2i], existing_tiles: Array[Vector2i], is_valid: bool, cost: int)
+
+# Portal signals
+signal portal_claimed(position: Vector2i, faction_id: int)
+signal portal_spawn_started(position: Vector2i, faction_id: int)
+signal portal_creature_spawned(position: Vector2i, creature_data: CreatureData)
+
+# Economy signals
+signal gold_changed(faction_id: int, old_amount: int, new_amount: int)
