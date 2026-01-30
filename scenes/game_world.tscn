@@ -1,4 +1,4 @@
-[gd_scene load_steps=11 format=3 uid="uid://dkgx2wm7e5rqy"]
+[gd_scene load_steps=15 format=3 uid="uid://dkgx2wm7e5rqy"]
 
 [ext_resource type="Script" uid="uid://cx8v440tf0dv8" path="res://scripts/presentation/tile_renderer.gd" id="1_tile_renderer"]
 [ext_resource type="Script" uid="uid://dxbn87fb4kewn" path="res://scripts/presentation/camera_controller.gd" id="2_camera_controller"]
@@ -9,6 +9,10 @@
 [ext_resource type="Script" uid="uid://srokrgnoxdub" path="res://scripts/systems/fog_system.gd" id="7_fog_system"]
 [ext_resource type="Script" path="res://scripts/presentation/cursor_light.gd" id="8_cursor_light"]
 [ext_resource type="Script" path="res://scripts/presentation/wall_torch_manager.gd" id="9_wall_torch_manager"]
+[ext_resource type="Script" path="res://scripts/systems/pathfinding_system.gd" id="10_pathfinding_system"]
+[ext_resource type="Script" path="res://scripts/systems/task_system.gd" id="11_task_system"]
+[ext_resource type="Script" path="res://scripts/systems/creature_system.gd" id="12_creature_system"]
+[ext_resource type="Script" path="res://scripts/presentation/creature_renderer.gd" id="13_creature_renderer"]
 
 [sub_resource type="Environment" id="Environment_1"]
 background_mode = 1
@@ -61,6 +65,15 @@ script = ExtResource("6_action_handler")
 [node name="FogSystem" type="Node" parent="Systems"]
 script = ExtResource("7_fog_system")
 
+[node name="PathfindingSystem" type="Node" parent="Systems"]
+script = ExtResource("10_pathfinding_system")
+
+[node name="TaskSystem" type="Node" parent="Systems"]
+script = ExtResource("11_task_system")
+
+[node name="CreatureSystem" type="Node" parent="Systems"]
+script = ExtResource("12_creature_system")
+
 [node name="HighlightManager" type="Node" parent="." node_paths=PackedStringArray("tile_renderer", "fog_system", "selection_system")]
 script = ExtResource("5_highlight_manager")
 tile_renderer = NodePath("../TileRenderer")
@@ -84,3 +97,8 @@ torch_range = 6.0
 torch_color = Color(1, 0.7, 0.4, 1)
 torch_height_fraction = 0.35
 torch_offset_from_wall = 0.6
+
+[node name="CreatureRenderer" type="Node3D" parent="."]
+script = ExtResource("13_creature_renderer")
+
+[node name="SpriteContainer" type="Node3D" parent="CreatureRenderer"]

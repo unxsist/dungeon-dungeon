@@ -13,10 +13,31 @@ extends Node
 ## Reference to the FogSystem
 @onready var fog_system: FogSystem = $GameWorld/Systems/FogSystem
 
+## Reference to the PathfindingSystem
+@onready var pathfinding_system: PathfindingSystem = $GameWorld/Systems/PathfindingSystem
+
+## Reference to the TaskSystem
+@onready var task_system: TaskSystem = $GameWorld/Systems/TaskSystem
+
+## Reference to the CreatureSystem
+@onready var creature_system: CreatureSystem = $GameWorld/Systems/CreatureSystem
+
+## Reference to the CreatureRenderer
+@onready var creature_renderer: CreatureRenderer = $GameWorld/CreatureRenderer
+
+## Reference to the Camera
+@onready var camera: Camera3D = $GameWorld/CameraPivot/Camera3D
+
+## Reference to the CreatureInfoPanel
+@onready var creature_info_panel: CreatureInfoPanel = $UI/CreatureInfoPanel
+
 
 func _ready() -> void:
 	# Print controls help
 	_print_controls()
+	
+	# Wire up creature systems
+	_setup_creature_systems()
 	
 	# Load the default map
 	if default_map_path and FileAccess.file_exists(default_map_path):
@@ -26,6 +47,19 @@ func _ready() -> void:
 		# Generate a test map if no map file exists
 		print("No map file found, generating test map...")
 		map_system.generate_test_map(20, 20)
+
+
+## Wire up creature-related systems
+func _setup_creature_systems() -> void:
+	# TaskSystem needs pathfinding reference
+	task_system.set_pathfinding(pathfinding_system)
+	
+	# CreatureSystem needs references to pathfinding and task system
+	creature_system.set_references(pathfinding_system, task_system)
+	
+	# CreatureInfoPanel needs references for click detection
+	if creature_info_panel:
+		creature_info_panel.set_references(creature_renderer, camera)
 
 
 func _print_controls() -> void:

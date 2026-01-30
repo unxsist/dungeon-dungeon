@@ -56,6 +56,18 @@ func _process(_delta: float) -> void:
 	cursor_sprite.position = mouse_pos + (cursor_sprite.texture.get_size() * 0.5 - current_hotspot) * cursor_scale
 
 
+func _notification(what: int) -> void:
+	match what:
+		NOTIFICATION_WM_MOUSE_EXIT:
+			# Mouse left the window - show system cursor
+			Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE)
+			cursor_sprite.visible = false
+		NOTIFICATION_WM_MOUSE_ENTER:
+			# Mouse entered the window - hide system cursor, show custom
+			Input.set_mouse_mode(Input.MOUSE_MODE_HIDDEN)
+			cursor_sprite.visible = true
+
+
 func _on_tile_hovered(_pos: Vector2i) -> void:
 	# Change to digging cursor when hovering over a diggable wall
 	cursor_sprite.texture = digging_cursor

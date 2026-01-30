@@ -13,7 +13,7 @@ extends Node3D
 @export var zoom_smooth_speed: float = 8.0
 
 ## Minimum and maximum zoom distance
-@export var zoom_min: float = 15.0
+@export var zoom_min: float = 6.0
 @export var zoom_max: float = 60.0
 
 ## Edge pan margin in pixels
@@ -177,7 +177,8 @@ func _handle_edge_pan() -> void:
 func _apply_movement(delta: float) -> void:
 	if _move_input.length() > 0:
 		# Scale speed by zoom level (faster when zoomed out)
-		var speed_scale := current_zoom / zoom_min
+		# Use fixed reference of 15.0 for consistent feel regardless of zoom_min setting
+		var speed_scale := current_zoom / 15.0
 		# Move relative to camera POV (yaw)
 		var input_vec := Vector3(-_move_input.x, 0, -_move_input.y)
 		var yaw_basis := Basis(Vector3.UP, deg_to_rad(_yaw_degrees))

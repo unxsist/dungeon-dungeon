@@ -32,3 +32,26 @@ signal visibility_updated(faction_id: int)
 # Camera signals
 signal camera_moved(position: Vector3)
 signal camera_zoomed(zoom_level: float)
+
+# Creature signals
+signal creature_spawned(creature_data: CreatureData)
+signal creature_despawned(creature_id: int)
+signal creature_moved(creature_id: int, from_tile: Vector2i, to_tile: Vector2i)
+signal creature_state_changed(creature_id: int, old_state: int, new_state: int)
+signal creature_task_started(creature_id: int, task: Dictionary)
+signal creature_task_completed(creature_id: int, task: Dictionary)
+signal creature_leveled_up(creature_id: int, new_level: int)
+signal creature_clicked(creature_id: int)
+signal creature_health_changed(creature_id: int, old_health: int, new_health: int)
+signal creature_happiness_changed(creature_id: int, happiness: float)
+
+# Tile claiming signals (progress-based)
+signal tile_claim_progress(position: Vector2i, faction_id: int, progress: float)
+signal tile_claim_started(position: Vector2i, faction_id: int)
+signal tile_claim_completed(position: Vector2i, faction_id: int)
+
+# Tile digging signals (marking and progress)
+signal dig_marked(position: Vector2i, faction_id: int)
+signal dig_unmarked(position: Vector2i)
+signal dig_progress(position: Vector2i, health: int, max_health: int)
+signal dig_completed(position: Vector2i)

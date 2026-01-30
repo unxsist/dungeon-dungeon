@@ -15,6 +15,9 @@ var selection_system: SelectionSystem
 ## Reference to MapData
 var map_data: MapData = null
 
+## Track tiles we've marked for digging (to detect unmarking on deselection)
+var _marked_tiles: Array[Vector2i] = []
+
 
 func _ready() -> void:
 	# Connect to events
@@ -52,16 +55,50 @@ func set_action_mode(mode: ActionMode) -> void:
 	print("Action mode: ", ActionMode.keys()[mode])
 
 
-## Handle tile click (right-click for action)
+## Handle tile click (right-click to deselect/unmark)
 func _on_tile_clicked(pos: Vector2i, button: int) -> void:
 	if button == MOUSE_BUTTON_RIGHT:
-		_perform_action_on_tile(pos)
+		# Right-click unmarks a tile if it's marked
+		if current_mode == ActionMode.DIG and map_data:
+			if map_data.is_marked_for_digging(pos):
+				map_data.unmark_for_digging(pos)
+				GameEvents.dig_unmarked.emit(pos)
 
 
-## Handle area selection (perform action on all selected tiles)
+## Handle area selection - automatically mark/perform action on selected tiles
 func _on_tiles_selected(positions: Array[Vector2i]) -> void:
-	# Don't auto-perform on selection, wait for right-click
-	pass
+	if not map_data:
+		return
+	
+	# In DIG mode, selecting walls marks them for digging
+	if current_mode == ActionMode.DIG:
+		# Find tiles that were marked but are now deselected (unmark them)
+		var tiles_to_unmark: Array[Vector2i] = []
+		for pos in _marked_tiles:
+			if pos not in positions:
+				tiles_to_unmark.append(pos)
+		
+		# Unmark deselected tiles
+		for pos in tiles_to_unmark:
+			if map_data.is_marked_for_digging(pos):
+				map_data.unmark_for_digging(pos)
+				GameEvents.dig_unmarked.emit(pos)
+		
+		# Mark newly selected tiles
+		for pos in positions:
+			var tile = map_data.get_tile(pos)
+			if tile and TileTypes.is_diggable(tile["type"]):
+				# Only mark if not already marked
+				if not map_data.is_marked_for_digging(pos):
+					if map_data.mark_for_digging(pos, player_faction_id):
+						GameEvents.dig_marked.emit(pos, player_faction_id)
+		
+		# Update tracked marked tiles to match current selection
+		_marked_tiles.clear()
+		for pos in positions:
+			var tile = map_data.get_tile(pos)
+			if tile and TileTypes.is_diggable(tile["type"]) and map_data.is_marked_for_digging(pos):
+				_marked_tiles.append(pos)
 
 
 ## Perform current action on a single tile
@@ -86,18 +123,24 @@ func perform_action_on_selection() -> void:
 		_perform_action_on_tile(pos)
 
 
-## Try to dig a tile
+## Try to mark a tile for digging (or unmark if already marked)
 func _try_dig(pos: Vector2i) -> void:
 	var tile = map_data.get_tile(pos)
 	if not tile:
 		return
 	
 	var tile_type: TileTypes.Type = tile["type"]
-	if TileTypes.is_diggable(tile_type):
-		GameEvents.dig_requested.emit(pos)
-		print("Digging tile at: ", pos)
+	if not TileTypes.is_diggable(tile_type):
+		return
+	
+	# Toggle marking - if already marked, unmark it
+	if map_data.is_marked_for_digging(pos):
+		map_data.unmark_for_digging(pos)
+		GameEvents.dig_unmarked.emit(pos)
 	else:
-		print("Cannot dig tile at: ", pos, " (type: ", TileTypes.to_string_name(tile_type), ")")
+		# Mark for digging by player's faction
+		if map_data.mark_for_digging(pos, player_faction_id):
+			GameEvents.dig_marked.emit(pos, player_faction_id)
 
 
 ## Try to claim a tile

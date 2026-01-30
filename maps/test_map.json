@@ -119,5 +119,12 @@
   "spawn_points": [
 	{ "faction_id": 0, "x": 5, "y": 10 },
 	{ "faction_id": 1, "x": 15, "y": 10 }
+  ],
+  "creatures": [
+	{ "type": "imp", "faction_id": 0, "x": 4, "y": 10, "level": 1 },
+	{ "type": "imp", "faction_id": 0, "x": 5, "y": 10, "level": 1 },
+	{ "type": "imp", "faction_id": 0, "x": 6, "y": 10, "level": 1 },
+	{ "type": "imp", "faction_id": 1, "x": 14, "y": 10, "level": 1 },
+	{ "type": "imp", "faction_id": 1, "x": 15, "y": 10, "level": 1 }
   ]
 }

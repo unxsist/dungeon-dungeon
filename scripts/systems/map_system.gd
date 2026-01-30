@@ -13,7 +13,8 @@ var current_map_path: String = ""
 
 func _ready() -> void:
 	# Connect to game events
-	GameEvents.dig_requested.connect(_on_dig_requested)
+	# Note: dig_requested is no longer used - digging is now handled via
+	# the dig marking system (dig_marked signal) and task system
 	GameEvents.claim_requested.connect(_on_claim_requested)
 	GameEvents.map_save_requested.connect(_on_save_requested)
 	GameEvents.map_load_requested.connect(_on_load_requested)
@@ -94,6 +95,33 @@ func _parse_map_data(data: Dictionary) -> MapData:
 			"position": Vector2i(spawn_data.get("x", 0), spawn_data.get("y", 0)),
 		})
 	
+	# Parse creatures
+	var creatures_array: Array = data.get("creatures", [])
+	for creature_data in creatures_array:
+		var creature := CreatureData.from_dict(creature_data, map.next_creature_id)
+		map.add_creature(creature)
+	
+	# Parse claim progress (if saved mid-game)
+	var claim_progress_data: Dictionary = data.get("claim_progress", {})
+	for pos_str in claim_progress_data.keys():
+		# Position stored as "x,y" string in JSON
+		var parts: PackedStringArray = pos_str.split(",")
+		if parts.size() == 2:
+			var pos := Vector2i(int(parts[0]), int(parts[1]))
+			var progress_data: Dictionary = claim_progress_data[pos_str]
+			map.claim_progress[pos] = {
+				"faction_id": progress_data.get("faction_id", 0),
+				"progress": progress_data.get("progress", 0.0),
+			}
+	
+	# Parse dig markings (if saved mid-game)
+	var dig_markings_data: Dictionary = data.get("dig_markings", {})
+	for pos_str in dig_markings_data.keys():
+		var parts: PackedStringArray = pos_str.split(",")
+		if parts.size() == 2:
+			var pos := Vector2i(int(parts[0]), int(parts[1]))
+			map.marked_for_digging[pos] = dig_markings_data[pos_str]
+	
 	return map
 
 
@@ -171,6 +199,24 @@ func generate_test_map(w: int = 20, h: int = 20) -> MapData:
 	map.spawn_points.append({"faction_id": 0, "position": room_center})
 	map.spawn_points.append({"faction_id": 1, "position": enemy_room})
 	
+	# Add starting Imps for player faction
+	for i in range(3):
+		var imp := CreatureData.new()
+		imp.initialize(CreatureTypes.Type.IMP, 1)
+		imp.faction_id = 0
+		imp.tile_position = room_center + Vector2i(i - 1, 0)
+		imp.visual_position = Vector2(imp.tile_position) * map.tile_size + Vector2(map.tile_size, map.tile_size) / 2.0
+		map.add_creature(imp)
+	
+	# Add starting Imps for enemy faction
+	for i in range(2):
+		var imp := CreatureData.new()
+		imp.initialize(CreatureTypes.Type.IMP, 1)
+		imp.faction_id = 1
+		imp.tile_position = enemy_room + Vector2i(i, 0)
+		imp.visual_position = Vector2(imp.tile_position) * map.tile_size + Vector2(map.tile_size, map.tile_size) / 2.0
+		map.add_creature(imp)
+	
 	current_map = map
 	GameEvents.map_loaded.emit(current_map)
 	map_ready.emit(current_map)
@@ -190,25 +236,6 @@ func _carve_room(map: MapData, center: Vector2i, radius: int, faction_id: int) -
 					"health": -1,
 					"variation": randi() % 4,
 				})
-
-
-## Handle dig request
-func _on_dig_requested(position: Vector2i) -> void:
-	if not current_map:
-		return
-	
-	var tile = current_map.get_tile(position)
-	if not tile:
-		return
-	
-	var tile_type: TileTypes.Type = tile["type"]
-	if not TileTypes.is_diggable(tile_type):
-		return
-	
-	# For now, instant dig (could add health reduction later)
-	var result: Variant = current_map.set_tile_type(position, TileTypes.Type.FLOOR)
-	if result:
-		GameEvents.tile_changed.emit(position, result[0], result[1])
 
 
 ## Handle claim request
@@ -296,6 +323,23 @@ func _build_save_data() -> Dictionary:
 	for faction in current_map.factions:
 		factions_data.append(faction.to_dict())
 	
+	# Save creatures
+	var creatures_data: Array[Dictionary] = []
+	for creature in current_map.creatures:
+		creatures_data.append(creature.to_dict())
+	
+	# Save claim progress (convert Vector2i keys to strings for JSON)
+	var claim_progress_data: Dictionary = {}
+	for pos in current_map.claim_progress.keys():
+		var pos_str := "%d,%d" % [pos.x, pos.y]
+		claim_progress_data[pos_str] = current_map.claim_progress[pos]
+	
+	# Save dig markings (convert Vector2i keys to strings for JSON)
+	var dig_markings_data: Dictionary = {}
+	for pos in current_map.marked_for_digging.keys():
+		var pos_str := "%d,%d" % [pos.x, pos.y]
+		dig_markings_data[pos_str] = current_map.marked_for_digging[pos]
+	
 	return {
 		"meta": {
 			"save_version": "1.0",
@@ -313,6 +357,9 @@ func _build_save_data() -> Dictionary:
 			"x": sp["position"].x,
 			"y": sp["position"].y,
 		}),
+		"creatures": creatures_data,
+		"claim_progress": claim_progress_data,
+		"dig_markings": dig_markings_data,
 	}
 
 
